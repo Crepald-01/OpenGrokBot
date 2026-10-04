@@ -9,7 +9,7 @@ from .settings import Admin, Settings
 
 JSON_FIELDS = {"net_allow": [], "net_deny": [], "grants": []}
 EDITABLE = {"name", "emoji", "job", "instructions", "profile", "model", "approval_mode", "step_limit", "net_mode",
-            "net_allow", "net_deny", "grants", "proactive", "paused", "archived", "template"}
+            "net_allow", "net_deny", "grants", "proactive", "paused", "archived", "template", "daily_token_limit"}
 APPROVAL_MODES = ("ask", "auto_review")
 PROACTIVE_LEVELS = ("off", "suggest", "act")
 
@@ -31,6 +31,7 @@ class Bots:
             row[k] = jload(row.get(k), d)
         row["paused"] = bool(row["paused"])
         row["archived"] = bool(row["archived"])
+        row["daily_token_limit"] = int(row.get("daily_token_limit") or 0)
         row["effective_approval_mode"] = self.effective_approval_mode(row)
         return row
 
@@ -102,6 +103,8 @@ class Bots:
                 v = int(bool(v))
             if k == "step_limit":
                 v = max(1, min(500, int(v)))
+            if k == "daily_token_limit":
+                v = max(0, min(1_000_000_000, int(v)))
             patch[k] = v
         patch["updated_at"] = now()
         self.db.update("bots", bot_id, patch)

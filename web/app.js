@@ -233,6 +233,7 @@
       case 'approval': refreshApprovals(); break;
       case 'bots': case 'groups': loadBootstrap(); break;
       case 'notification':
+        if (ev.muted) break;   // quiet hours / Do Not Disturb: the Inbox still has it
         toast(ev.title, ev.body, () => { if (ev.thread_id) openThread(ev.thread_id, ev.bot_name || 'Thread', null); });
         systemNotify(ev); break;
       default: break;

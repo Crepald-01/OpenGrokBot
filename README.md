@@ -34,6 +34,7 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 - **Teams.** Bots message each other, work in group chats with `@mentions`, and hand off tasks with a single owner. A Chief of Staff Bot coordinates specialists.
 - **Learn by demonstration.** Press *Follow along*, do the job once, and the Bot drafts a **skill** from what you did. Test it, activate it, schedule it as a **routine**.
 - **Home dashboard.** One screen for the whole team: what needs you, who is working, token use for the week and recent actions. `Ctrl+K` opens a command palette, `Ctrl+1`-`9` jump to a Bot, and Settings > App lets you pick an accent colour, density and text size.
+- **Search, quiet hours and budgets.** `Ctrl+K` searches every chat and memory, Do Not Disturb and quiet hours silence notifications without losing them, and each Bot can have a daily token budget.
 - **Routines.** Run a skill or prompt on a cron schedule, per Bot, with history and notifications.
 - **Bring your own model.** Anthropic or any OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM...). Models are **detected from your provider** and offered in a dropdown, and every Bot can use its own provider and model.
 - **Plugins and MCP.** Built-in Gmail, Google Calendar, Slack, Notion, Linear, Jira, GitHub and a generic REST connector, plus declarative or Python plugins and any MCP server.
@@ -146,6 +147,10 @@ Type `/` in a chat (desktop or phone) to see the commands. They run in the backg
 | `/routines` | Scheduled routines and their next run |
 | `/new [title]`, `/rename <title>` | Start a new thread, or rename this one |
 | `/stop`, `/pause`, `/resume` | Control the Bot |
+| `/budget [50k \| off]` | Show or set this Bot's daily token budget |
+| `/dnd [2h \| off]` | Do Not Disturb: silence pop-ups, sounds and phone pushes for a while |
+| `/search <words>` | Search every chat and memory |
+| `/retry`, `/export` | Send your last message again; save this chat as Markdown |
 | `/usage`, `/version`, `/help` | Info |
 
 ## A good first task

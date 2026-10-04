@@ -979,6 +979,7 @@ class ChatPage(QWidget):
         m = QMenu(self)
         if self.group_id:
             m.addAction("Edit group…", lambda: self.editGroup.emit(self.group_id))
+            m.addAction("Export chat as Markdown…", self.export_chat)
             m.addAction("Delete group", self._delete_thread)
         else:
             m.addAction("Edit Bot…", lambda: self.editBot.emit(self.bot_id))
@@ -986,10 +987,25 @@ class ChatPage(QWidget):
             m.addAction("Resume Bot" if b and b["paused"] else "Pause Bot", self._toggle_pause)
             m.addSeparator()
             m.addAction("Rename thread…", self._rename)
+            m.addAction("Export chat as Markdown…", self.export_chat)
             m.addAction("Delete thread", self._delete_thread)
             m.addSeparator()
             m.addAction("Export Bot package…", lambda: self.exportBot.emit(self.bot_id))
         m.exec(self.btn_menu.mapToGlobal(self.btn_menu.rect().bottomLeft()))
+
+    def export_chat(self) -> None:
+        if not self.thread_id:
+            return
+        title = "".join(ch if ch.isalnum() or ch in "-_ " else "" for ch in (self.thread_btn.text() or "chat")).strip().replace(" ", "-")[:40] or "chat"
+        path, _ = QFileDialog.getSaveFileName(self, "Export chat", f"{title}.md", "Markdown (*.md)")
+        if not path:
+            return
+
+        def ok(data: bytes) -> None:
+            with open(path, "wb") as f:
+                f.write(data)
+            self.toast.emit("Chat exported.", "ok")
+        self.api.request("GET", f"/api/threads/{self.thread_id}/export", ok, lambda e: self.toast.emit(e, "error"), raw=True)
 
     def _toggle_pause(self) -> None:
         b = self.store.bot(self.bot_id)

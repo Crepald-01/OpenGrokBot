@@ -101,6 +101,10 @@ CREATE TABLE IF NOT EXISTS known_logins(domain TEXT PRIMARY KEY, added_at REAL);
 """
 
 
+# columns added after the first release: applied to existing databases when they are opened
+MIGRATIONS = [("bots", "daily_token_limit", "INTEGER DEFAULT 0")]
+
+
 def new_id(n: int = 12) -> str:
     return uuid.uuid4().hex[:n]
 
@@ -116,6 +120,10 @@ class Database:
         self._write_lock = threading.RLock()
         with self._write_lock:
             self.conn.executescript(SCHEMA)
+            for table, col, decl in MIGRATIONS:
+                have = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+                if col not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
             self.conn.commit()
 
     @property

@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Any
 
-from . import VERSION, commands, notify as notifier, paths
+from . import VERSION, commands, notify as notifier, paths, quiet
 from .actionlog import ActionLog
 from .agent import AgentRun, TurnManager, run_reflection
 from .approvals import ApprovalManager
@@ -21,6 +21,7 @@ from .messaging import Messaging
 from .netpolicy import NetworkPolicy
 from .plugins import PluginManager
 from .routines import Routines
+from .search import Search
 from .settings import Admin, Settings, plugin_allowed
 from .skills import Skills
 from .templates import TEAM_PRESET, template as get_template
@@ -60,6 +61,7 @@ class Engine:
         self.approvals.engine = self
         self.computer = Computer(self.db, self.settings, self.net, self.events)
         self.threads = Threads(self.db, self.events, self.bots.names, self.describe_tool)
+        self.search = Search(self.db, self.bots.names)
         self.mcp = McpManager(self.db, self.admin)
         self.plugins = PluginManager(self)
         self.messaging = Messaging(self)
@@ -142,11 +144,14 @@ class Engine:
             return
         if kind == "finished" and not cfg.get("on_finish", True):
             return
+        muted = quiet.is_quiet(cfg)   # quiet hours / Do Not Disturb: recorded in the Inbox, but nothing pops up, beeps or is pushed
         with self._notif_lock:
             nid = self.db.insert("notifications", {"ts": now(), "kind": kind, "bot_id": (bot or {}).get("id", ""), "thread_id": thread_id or "",
                                                    "title": title[:200], "body": body[:500]})
         self.events.publish("notification", id=nid, kind=kind, bot_id=(bot or {}).get("id", ""), bot_name=(bot or {}).get("name", ""),
-                            thread_id=thread_id or "", title=title, body=body, urgent=urgent)
+                            thread_id=thread_id or "", title=title, body=body, urgent=urgent, muted=muted)
+        if muted:
+            return
         if cfg.get("toast", True) and not self.events.has_subscriber("desktop"):
             notifier.toast(title, body)
         if cfg.get("ntfy_url") and cfg.get("ntfy_topic") and (urgent or kind in ("approval", "question", "takeover", "login", "finished", "error", "routine")):

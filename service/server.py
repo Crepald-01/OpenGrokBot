@@ -248,6 +248,19 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             paths_.append(str(p))
         return eng.send_user_message(tid, body.get("text", ""), paths_)
 
+    @app.get("/api/search", dependencies=[api])
+    def search(q: str = "", limit: int = 30) -> dict:
+        return eng.search.run(q, max(1, min(100, limit)))
+
+    @app.get("/api/threads/{tid}/export", dependencies=[api])
+    def thread_export(tid: str) -> Response:
+        th = eng.threads.get(tid)
+        if not th:
+            raise HTTPException(404, "No such thread.")
+        name = re.sub(r"[^\w\-]+", "_", th.get("title") or "chat").strip("_")[:40] or "chat"
+        return Response(eng.threads.export_markdown(tid).encode("utf-8"), media_type="text/markdown; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
+
     @app.get("/api/commands", dependencies=[api])
     def commands_list() -> list[dict]:
         return commands.listing()

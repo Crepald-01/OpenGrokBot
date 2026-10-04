@@ -120,6 +120,7 @@ class AgentRun:
         try:
             if eng.usage.over_limit():
                 raise ProviderError("rate_limit", "Weekly usage limit reached. Raise it in Settings > Usage or wait for the weekly reset.")
+            self._check_budget()
             provider = make_provider(eng.settings, self.bot.get("profile") or None, self.bot.get("model") or None)
             self.vision = provider.vision
             if self.task and self.trigger != "user":
@@ -152,6 +153,13 @@ class AgentRun:
                 "network": "\n\nSend a message to continue once you are back online.",
                 "rate_limit": "\n\nWait a moment and send a message to continue."}.get(e.kind, "")
 
+    def _check_budget(self) -> None:
+        eng = self.engine
+        bot = eng.bots.get(self.bot_id) or self.bot
+        if eng.usage.bot_over_budget(bot):
+            raise ProviderError("budget", f"{bot['name']} has used its daily budget ({eng.usage.bot_today(bot['id']):,} of {bot['daily_token_limit']:,} tokens). "
+                                          "It can work again after midnight, or raise the budget in the Bot's settings (or with /budget).")
+
     # --------------------------------------------------------------- the loop
     def _loop(self, provider, history: list[dict], res: TurnResult) -> TurnResult:
         eng = self.engine
@@ -163,6 +171,8 @@ class AgentRun:
                 raise StopRequested()
             self.steps = step
             self.bot = eng.bots.get(self.bot_id) or self.bot
+            if step > 1:
+                self._check_budget()
             ext, self.last_seen, ext_ids = eng.threads.external_since(self.thread_id, self.bot_id, self.last_seen)
             history.extend(ext)
             self.ids.extend(ext_ids)
@@ -455,6 +465,11 @@ class TurnManager:
             return None
         if eng.usage.over_limit() and trigger == "user":
             eng.threads.notice(thread_id, "Weekly usage limit reached. Raise it in Settings > Usage, or wait for the weekly reset.", "warn")
+            return None
+        if eng.usage.bot_over_budget(bot):
+            if trigger == "user":
+                eng.threads.notice(thread_id, f"{bot['name']} has used its daily budget ({eng.usage.bot_today(bot_id):,} of {bot['daily_token_limit']:,} tokens). "
+                                              "It can work again after midnight, or raise the budget in the Bot's settings (or with /budget).", "warn")
             return None
         with self._lock:
             for r in self.runs.values():

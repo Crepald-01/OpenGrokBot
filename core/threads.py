@@ -227,6 +227,36 @@ class Threads:
                         items.append({**base, "type": "system_note", "text": t})
         return items
 
+    def export_markdown(self, thread_id: str) -> str:
+        """A readable transcript: who said what and when, with tool use as one-line notes. No tool arguments or results."""
+        from datetime import datetime
+        th = self.get(thread_id)
+        if not th:
+            return ""
+        names = self._names()
+        owner = names.get(th.get("bot_id") or "", {})
+        g = self.db.one("SELECT name FROM groups WHERE id=?", (th.get("group_id"),)) if th.get("group_id") else None
+        stamp = lambda ts: datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")   # noqa: E731
+        lines = [f"# {th.get('title') or 'Conversation'}", "",
+                 f"_{(g or {}).get('name') or owner.get('name', 'Bot')} · exported {stamp(now())} from OpenGrokBot_", ""]
+        for it in self.display(thread_id, 100000):
+            t = it["type"]
+            if t == "user":
+                lines += [f"**You** · {stamp(it['ts'])}", "", it["text"], ""]
+            elif t == "assistant":
+                lines += [f"**{it.get('name') or 'Bot'}** · {stamp(it['ts'])}", "", it["text"], ""]
+            elif t == "tool" and not it.get("partial"):
+                lines += [f"> {it.get('label') or it.get('tool')} ({it.get('status', 'ok')})", ""]
+        return "\n".join(lines).rstrip() + "\n"
+
+    def last_user_text(self, thread_id: str) -> str:
+        for r in reversed(self.rows(thread_id)):
+            if r["kind"] == "llm" and r["author"] == "user" and r["role"] == "user":
+                t = blocks_text(jload(r["content"], []))
+                if t:
+                    return t
+        return ""
+
     def search(self, bot_id: str, query: str, limit: int = 10) -> list[dict]:
         like = f"%{query}%"
         rows = self.db.query(

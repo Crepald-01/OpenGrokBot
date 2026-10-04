@@ -224,6 +224,14 @@ class BotEditor(QDialog):
         self.steps.setRange(1, 500)
         self.steps.setValue(int(self.bot.get("step_limit", 40)))
         mf.addRow("Step limit per task", self.steps)
+        self.budget = QSpinBox()
+        self.budget.setRange(0, 1_000_000_000)
+        self.budget.setSingleStep(10_000)
+        self.budget.setSpecialValueText("No limit")
+        self.budget.setSuffix(" tokens a day")
+        self.budget.setValue(int(self.bot.get("daily_token_limit", 0) or 0))
+        self.budget.setToolTip("When this Bot has used this many tokens since midnight it stops, and works again the next day. Also: /budget 50k in its chat.")
+        mf.addRow("Daily budget", self.budget)
         self.proactive = QComboBox()
         self.proactive.addItem("Off: only works when asked", "off")
         self.proactive.addItem("Suggest: notices work and proposes it", "suggest")
@@ -423,7 +431,7 @@ class BotEditor(QDialog):
         grants = [self.grants.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.grants.count()) if self.grants.item(i).checkState() == Qt.CheckState.Checked]
         body = {"name": self.name.text().strip(), "emoji": self.emoji.text().strip() or "🤖", "job": self.job.toPlainText().strip(),
                 "instructions": self.instr.toPlainText().strip(), "profile": self.prov.currentData(), "model": self.picker.text(),
-                "step_limit": self.steps.value(), "proactive": self.proactive.currentData(), "net_mode": self.net.currentData(),
+                "step_limit": self.steps.value(), "daily_token_limit": self.budget.value(), "proactive": self.proactive.currentData(), "net_mode": self.net.currentData(),
                 "net_allow": lines(self.allow.toPlainText()), "net_deny": lines(self.deny.toPlainText()), "grants": grants}
         if self.approval.isEnabled():
             body["approval_mode"] = self.approval.currentData()

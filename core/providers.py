@@ -449,7 +449,7 @@ def make_provider(settings: Settings, profile_id: str | None, model: str | None)
 
 def friendly_error(err: ProviderError) -> str:
     prefix = {"auth": "API key problem", "rate_limit": "Rate limit", "network": "Network problem",
-              "bad_request": "Request rejected", "server": "Provider outage"}.get(err.kind, "Model error")
+              "bad_request": "Request rejected", "server": "Provider outage", "budget": "Daily budget"}.get(err.kind, "Model error")
     return f"{prefix}: {err}"
 
 

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable
 
-from . import VERSION
+from . import VERSION, quiet
 
 if TYPE_CHECKING:  # pragma: no cover
     from .engine import Engine
@@ -124,6 +124,7 @@ def _status(c: Ctx):
         f"- Step limit: {b['step_limit']} · Proactive: {b['proactive']}",
         f"- This thread: “{_clip(c.thread['title'], 40)}”, {n} messages",
         f"- Tokens this week (all Bots): {_tokens(c.eng.usage.week_total())}",
+        f"- Today: {_tokens(c.eng.usage.bot_today(b['id']))}" + (f" of {_tokens(b['daily_token_limit'])} daily budget" if b["daily_token_limit"] else " (no daily budget)"),
     ])
 
 
@@ -303,6 +304,89 @@ def _usage(c: Ctx):
     lines = [f"**This week:** {_tokens(s['total'])}{lim} tokens ({_tokens(s['input_tokens'])} in, {_tokens(s['output_tokens'])} out). Resets {_when(s['resets_at'])}."]
     for r in s["per_bot"][:5]:
         lines.append(f"- {r['emoji']} {r['name']}: {_tokens((r['input_tokens'] or 0) + (r['output_tokens'] or 0))} · {r['turns']} turns")
+    capped = [(b, s["today"].get(b["id"], 0)) for b in c.eng.bots.list() if b["daily_token_limit"]]
+    if capped:
+        lines.append("\n**Daily budgets (today):**")
+        lines.extend(f"- {b['emoji']} {b['name']}: {_tokens(used)} of {_tokens(b['daily_token_limit'])}" + (" · budget used up" if used >= b["daily_token_limit"] else "") for b, used in capped)
+    return "\n".join(lines)
+
+
+def parse_tokens(text: str) -> int | None:
+    """'50k' -> 50000, '1.5m' -> 1500000, '20000' -> 20000."""
+    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*([km])?\s*(?:tokens?)?\s*$", (text or "").lower())
+    if not m:
+        return None
+    return int(float(m.group(1)) * {"k": 1000, "m": 1_000_000}.get(m.group(2) or "", 1))
+
+
+@command("budget", "Show or set this Bot's daily token budget", "/budget [50k | off]", bot_only=True, group="Bot")
+def _budget(c: Ctx):
+    arg = c.args.strip().lower()
+    used = c.eng.usage.bot_today(c.bot["id"])
+    if not arg:
+        lim = c.bot["daily_token_limit"]
+        return (f"Daily budget: **{_tokens(lim)}** tokens. Used today: {_tokens(used)}." if lim else f"No daily budget. Used today: {_tokens(used)}.") + \
+            "\n\nSet one with `/budget 50k`, or remove it with `/budget off`. The Bot stops when it is used up and works again after midnight."
+    if arg in ("off", "none", "0", "unlimited"):
+        c.eng.bots.update(c.bot["id"], daily_token_limit=0)
+        return "Daily budget removed."
+    n = parse_tokens(arg)
+    if not n:
+        return {"level": "warn", "text": "Give a number of tokens, like `/budget 50k` or `/budget 1.5m`, or `/budget off`."}
+    c.eng.bots.update(c.bot["id"], daily_token_limit=n)
+    return f"Daily budget set to **{_tokens(n)}** tokens. Used today: {_tokens(used)}."
+
+
+@command("dnd", "Do Not Disturb: silence notifications for a while", "/dnd [30m | 2h | off]", group="Info", aliases=("quiet", "mute"))
+def _dnd(c: Ctx):
+    arg = c.args.strip().lower()
+    cfg = c.eng.settings.get("notifications", {})
+    if arg in ("off", "stop", "end", "0"):
+        c.eng.settings.set("notifications.dnd_until", 0)
+        return "Do Not Disturb is off. " + quiet.describe({**cfg, "dnd_until": 0})
+    if not arg or arg == "status":
+        return quiet.describe(cfg) + "\n\nUse `/dnd 2h` to silence notifications for two hours, `/dnd off` to end it."
+    secs = quiet.parse_duration(arg)
+    if not secs:
+        return {"level": "warn", "text": "How long? Try `/dnd 30m`, `/dnd 2h` or `/dnd off`."}
+    until = time.time() + secs
+    c.eng.settings.set("notifications.dnd_until", until)
+    return f"Do Not Disturb until **{datetime.fromtimestamp(until).strftime('%H:%M' if secs < 86400 else '%a %H:%M')}**. Approvals still wait in your Inbox, and Bots keep working."
+
+
+@command("retry", "Send your last message again", "/retry", group="Chat", aliases=("again",))
+def _retry(c: Ctx):
+    text = c.eng.threads.last_user_text(c.thread["id"])
+    if not text:
+        return {"level": "warn", "text": "There is no earlier message in this chat to send again."}
+    return {"send": text}
+
+
+@command("export", "Save this chat as a Markdown file in the shared workspace", "/export", group="Chat")
+def _export(c: Ctx):
+    md = c.eng.threads.export_markdown(c.thread["id"])
+    slug = re.sub(r"[^\w\-]+", "-", c.thread.get("title") or "chat").strip("-")[:40] or "chat"
+    folder = c.eng.computer.workspace / "shared" / "exports"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{slug}-{datetime.now().strftime('%Y%m%d-%H%M')}.md"
+    path.write_text(md, encoding="utf-8")
+    return f"Saved the chat to `shared/exports/{path.name}` in the workspace.\n\nFull path: `{path}`"
+
+
+@command("search", "Search every chat and memory", "/search <words>", group="Info", aliases=("find",))
+def _search(c: Ctx):
+    q = c.args.strip()
+    if len(q) < 2:
+        return {"level": "warn", "text": "Search for what? For example `/search invoice`."}
+    r = c.eng.search.run(q, 8)
+    if not r["messages"] and not r["memories"]:
+        return f"Nothing found for “{_clip(q, 40)}”."
+    lines = [f"**{len(r['messages'])}{'+' if len(r['messages']) >= 8 else ''} messages, {len(r['memories'])} memories** for “{_clip(q, 40)}”:"]
+    for m in r["messages"]:
+        lines.append(f"- {m['emoji']} **{m['where']}** · {_when(m['ts'])} · {m['who']}: {_clip(m['snippet'], 110)}")
+    for m in r["memories"]:
+        lines.append(f"- 🧠 **{m['where']}** memory: {_clip(m['snippet'], 110)}")
+    lines.append("\nPress Ctrl+K and type to open a result.")
     return "\n".join(lines)
 
 

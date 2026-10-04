@@ -179,6 +179,8 @@ class Routines:
                 status, error = "skipped", "Bot is paused or archived."
             elif self.engine.usage.over_limit():
                 status, error = "skipped", "Weekly usage limit reached."
+            elif self.engine.usage.bot_over_budget(bot):
+                status, error = "skipped", "This Bot's daily token budget is used up."
             else:
                 th = self.engine.threads.create(bot["id"], f"{r['name']} · {datetime.now().strftime('%b %d %H:%M')}", kind="routine")
                 thread_id = th["id"]

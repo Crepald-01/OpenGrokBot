@@ -73,6 +73,7 @@ class HomePage(QWidget):
         super().__init__()
         self.api, self.store = api, store
         self.actions: list[dict] = []
+        self.today: dict[str, int] = {}
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         sc = QScrollArea()
@@ -155,6 +156,7 @@ class HomePage(QWidget):
 
     def load(self) -> None:
         def usage(d: dict) -> None:
+            self.today = d.get("today", {})
             lim, tot = d.get("limit", 0), d.get("total", 0)
             if lim:
                 self.t_tokens.set(fmt_tokens(tot), f"of {fmt_tokens(lim)} ({100 * tot // lim}%)")
@@ -164,6 +166,7 @@ class HomePage(QWidget):
             else:
                 self.t_tokens.set(fmt_tokens(tot), "no weekly limit set")
                 self.token_bar.hide()
+            self.render()
 
         def feed(rows: list) -> None:
             self.actions = rows
@@ -211,6 +214,13 @@ class HomePage(QWidget):
             for w in (name, st):
                 w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 col.addWidget(w)
+            cap = int(b.get("daily_token_limit") or 0)
+            if cap:
+                used = self.today.get(b["id"], 0)
+                bl = QLabel(f"Today {fmt_tokens(used)} of {fmt_tokens(cap)}" + ("  ·  budget used up" if used >= cap else ""))
+                bl.setStyleSheet(f"color: {p['warn'] if used >= cap else p['faint']}; font-size: {theme.base_size() - 1}px;")
+                bl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+                col.addWidget(bl)
             job.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             col.addWidget(job)
             h.addLayout(col, 1)

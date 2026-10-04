@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QFrame, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QFrame, QTimeEdit, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMessageBox, QPlainTextEdit, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
 from core import paths
@@ -362,6 +363,13 @@ class SettingsPage(QWidget):
         self.no_min.setRange(0, 3600)
         self.no_min.setSuffix(" s")
         f.addRow("Only for tasks longer than", self.no_min)
+        self.q_on = QCheckBox("Quiet hours: no pop-ups, sounds or phone pushes on a schedule (the Inbox still collects everything)")
+        v.addWidget(self.q_on)
+        self.q_start, self.q_end = QTimeEdit(), QTimeEdit()
+        for t in (self.q_start, self.q_end):
+            t.setDisplayFormat("HH:mm")
+        f.addRow("Quiet from", self.q_start)
+        f.addRow("Quiet until", self.q_end)
         self.no_url = QLineEdit()
         self.no_url.setPlaceholderText("https://ntfy.sh")
         self.no_topic = QLineEdit()
@@ -370,6 +378,13 @@ class SettingsPage(QWidget):
         f.addRow("Phone push: topic", self.no_topic)
         v.addLayout(f)
         v.addWidget(label("For push notifications while your phone is locked, install the free ntfy app, subscribe to the same topic, and fill in the two fields above (use your own server for privacy). The mobile web app also shows alerts while it is open.", muted=True))
+        dnd = QHBoxLayout()
+        dnd.addWidget(label("Do Not Disturb:", muted=True, wrap=False))
+        for text, secs in (("1 hour", 3600), ("4 hours", 4 * 3600), ("Until tomorrow", 0)):
+            dnd.addWidget(button(text, on=lambda s=secs: self.set_dnd(s)))
+        dnd.addWidget(button("End it", flat=True, on=lambda: self.set_dnd(-1)))
+        dnd.addStretch(1)
+        v.addLayout(dnd)
         row = QHBoxLayout()
         row.addWidget(button("Save", primary=True, on=self.save_notifications))
         row.addWidget(button("Send test", on=lambda: self.api.post("/api/notifications/test", {})))
@@ -383,8 +398,20 @@ class SettingsPage(QWidget):
     def save_notifications(self) -> None:
         body = {"notifications.toast": self.no_toast.isChecked(), "notifications.sound": self.no_sound.isChecked(), "notifications.on_finish": self.no_finish.isChecked(),
                 "notifications.on_approval": self.no_appr.isChecked(), "notifications.min_turn_seconds": self.no_min.value(), "notifications.ntfy_url": self.no_url.text().strip(),
-                "notifications.ntfy_topic": self.no_topic.text().strip()}
+                "notifications.ntfy_topic": self.no_topic.text().strip(), "notifications.quiet_enabled": self.q_on.isChecked(),
+                "notifications.quiet_start": self.q_start.time().toString("HH:mm"), "notifications.quiet_end": self.q_end.time().toString("HH:mm")}
         self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.no_msg.setText("Saved.")), lambda e: self.no_msg.setText(e))
+
+    def set_dnd(self, secs: int) -> None:
+        """secs > 0: that long from now; 0: until 07:00 tomorrow-ish (next local midnight + 7h); -1: end Do Not Disturb."""
+        if secs == 0:
+            from datetime import datetime, timedelta
+            tomorrow = (datetime.now() + timedelta(days=1)).replace(hour=7, minute=0, second=0, microsecond=0)
+            until = tomorrow.timestamp()
+        else:
+            until = 0 if secs < 0 else time.time() + secs
+        self.api.put("/api/settings", {"notifications.dnd_until": until},
+                     lambda s: (setattr(self.store, "settings", s), self.store.settingsChanged.emit(), self.no_msg.setText("Do Not Disturb is off." if not until else "Do Not Disturb is on.")))
 
     # ============================================================== computer
     def _build_computer(self) -> None:
@@ -667,6 +694,9 @@ class SettingsPage(QWidget):
         self.no_min.setValue(int(no.get("min_turn_seconds", 20)))
         self.no_url.setText(no.get("ntfy_url", ""))
         self.no_topic.setText(no.get("ntfy_topic", ""))
+        self.q_on.setChecked(bool(no.get("quiet_enabled", False)))
+        self.q_start.setTime(QTime.fromString(no.get("quiet_start", "22:00"), "HH:mm"))
+        self.q_end.setTime(QTime.fromString(no.get("quiet_end", "07:00"), "HH:mm"))
         self.c_headless.setChecked(bool(s.get("computer", {}).get("headless", True)))
         self.a_theme.setCurrentIndex(max(0, self.a_theme.findData(s.get("theme", "dark"))))
         st = self.store.status

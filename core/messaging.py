@@ -288,7 +288,7 @@ class Messaging:
     def proactive_tick(self) -> None:
         interval = float(self.engine.settings.get("proactive.interval_min", 180)) * 60
         for bot in self.engine.bots.list():
-            if bot["proactive"] == "off" or bot["paused"] or self.engine.usage.over_limit():
+            if bot["proactive"] == "off" or bot["paused"] or self.engine.usage.over_limit() or self.engine.usage.bot_over_budget(bot):
                 continue
             last = float(self.engine.settings.get(f"proactive_last.{bot['id']}", 0) or 0)
             if time.time() - last < interval or self.engine.turns.is_busy(bot["id"]):

@@ -4,6 +4,7 @@ from __future__ import annotations
 import glob
 import os
 import sys
+import time
 from typing import NamedTuple
 
 from PySide6.QtCore import QEvent, QProcess, QSize, Qt, QTimer, Signal
@@ -11,6 +12,7 @@ from PySide6.QtGui import QAction, QCloseEvent, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
                                QMenu, QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
+from core import quiet
 from . import icons, theme
 from .api import Api, load_ui_config, save_ui_config
 from .chat_view import ChatPage
@@ -230,6 +232,16 @@ def _score(q: str, text: str) -> int:
     return 30 if all(ch in it for ch in q) else 0
 
 
+def _clip(s: str, n: int) -> str:
+    s = " ".join((s or "").split())
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _ago(ts: float) -> str:
+    d = max(0, time.time() - ts)
+    return "just now" if d < 90 else f"{int(d // 60)} min ago" if d < 3600 else f"{int(d // 3600)} h ago" if d < 86400 else f"{int(d // 86400)} d ago"
+
+
 def kbd(text: str) -> QLabel:
     k = QLabel(text)
     k.setProperty("kbd", True)
@@ -265,8 +277,12 @@ class QuickSwitcher(QDialog):
     """Ctrl+K command palette: Bots, groups, pages and actions in sections, with shortcut hints, recents and loose matching."""
     chosen = Signal(str)
 
-    def __init__(self, entries: list[Entry], recent: list[str] | None = None, parent=None):
+    def __init__(self, entries: list[Entry], recent: list[str] | None = None, parent=None, searcher=None):
         super().__init__(parent)
+        self.searcher = searcher
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.timeout.connect(self._run_search)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setModal(True)
         self.resize(580, 470)
@@ -315,9 +331,38 @@ class QuickSwitcher(QDialog):
         self.list.addItem(it)
         self.list.setItemWidget(it, PaletteRow(e))
 
+    def _run_search(self) -> None:
+        q = self.input.text().strip()
+        if self.searcher and len(q) >= 2:
+            self.searcher(q, self._show_hits)
+
+    def _show_hits(self, q: str, data: dict) -> None:
+        """Message and memory hits from the service arrive a moment after the local matches; they are appended in their own section."""
+        if q != self.input.text().strip():
+            return   # the user kept typing
+        for i in range(self.list.count() - 1, -1, -1):   # replace an earlier batch
+            it = self.list.item(i)
+            if it.data(Qt.ItemDataRole.UserRole + 1) == "hit":
+                self.list.takeItem(i)
+        hits = [Entry(f"thread:{m['thread_id']}:{m['bot_id']}", _clip(m["snippet"], 74), f"{m['where']}  ·  {_ago(m['ts'])}", "log", "Messages", "", m.get("emoji") or "")
+                for m in data.get("messages", [])]
+        hits += [Entry(f"memory:{m['bot_id']}", _clip(m["snippet"], 74), f"Memory  ·  {m['where']}", "bot", "Messages", "", "🧠") for m in data.get("memories", [])]
+        if not hits:
+            return
+        had_current = self.list.currentItem() is not None and bool(self.list.currentItem().flags() & Qt.ItemFlag.ItemIsSelectable)
+        self._header("Messages and memories")
+        self.list.item(self.list.count() - 1).setData(Qt.ItemDataRole.UserRole + 1, "hit")
+        for e in hits:
+            self._add(e)
+            self.list.item(self.list.count() - 1).setData(Qt.ItemDataRole.UserRole + 1, "hit")
+        if not had_current:
+            self._select(0, 1)
+
     def filter(self, text: str) -> None:
         self.list.clear()
         q = text.lower().strip()
+        if len(q) >= 2 and self.searcher:
+            self._search_timer.start(250)
         if q:
             scored = sorted(((max(_score(q, e.name), _score(q, e.sub) - 20), i, e) for i, e in enumerate(self.entries)), key=lambda t: (-t[0], t[1]))
             hits = [e for s, _, e in scored if s > 0]
@@ -369,6 +414,7 @@ SHORTCUTS = [
     ("Navigation", [("Ctrl+K", "Command palette: search Bots, pages and actions"), ("Ctrl+0", "Home"), ("Ctrl+1 … 9", "Jump to the 1st … 9th Bot"),
                     ("Ctrl+,", "Settings"), ("Ctrl+/", "This list")]),
     ("Create", [("Ctrl+N", "New Bot")]),
+    ("Find", [("Ctrl+K", "Then type: also searches every chat and memory")]),
     ("In a chat", [("Enter", "Send"), ("Shift+Enter", "New line"), ("/", "Slash commands (type / to see them)"), ("Tab", "Complete the highlighted command"),
                    ("Esc", "Close the command list")]),
 ]
@@ -477,6 +523,10 @@ class MainWindow(QMainWindow):
         store.approvalsChanged.connect(self.refresh_lists)
         store.connectionChanged.connect(self.set_connected)
         store.notification.connect(self.on_notification)
+        store.settingsChanged.connect(lambda: self.set_connected(self.store.connected))
+        self._quiet_timer = QTimer(self)
+        self._quiet_timer.timeout.connect(lambda: self.set_connected(self.store.connected))
+        self._quiet_timer.start(30_000)
 
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.quick_switch)
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self.new_bot)
@@ -641,7 +691,8 @@ class MainWindow(QMainWindow):
         self.conn_dot.setStyleSheet(f"background: {p['ok'] if ok else p['bad']}; border-radius: 5px;")
         mode = self.api.conn.mode
         self.conn_dot.setToolTip("Connected to the background service" if ok else "Reconnecting to the background service…")
-        self.foot.setText(("Connected" if ok else "Reconnecting…") + ("  ·  this PC" if mode == "local" else "  ·  remote computer"))
+        self.foot.setText(("Connected" if ok else "Reconnecting…") + ("  ·  this PC" if mode == "local" else "  ·  remote computer")
+                          + ("  ·  Do Not Disturb" if quiet.is_quiet(self.store.settings.get("notifications", {})) else ""))
 
     # --------------------------------------------------------------- navigation
     def select(self, key: str) -> None:
@@ -719,15 +770,29 @@ class MainWindow(QMainWindow):
         out.append(Entry("action:theme", "Switch to light theme" if theme.theme_name() == "dark" else "Switch to dark theme", "", "moon", "Actions"))
         if self.store.busy:
             out.append(Entry("action:stopall", f"Stop all running tasks ({len(self.store.busy)})", "", "stop", "Actions"))
+        if quiet.is_quiet({"dnd_until": self.store.settings.get("notifications", {}).get("dnd_until", 0)}):
+            out.append(Entry("action:dndoff", "End Do Not Disturb", "", "alert", "Actions"))
+        else:
+            out.append(Entry("action:dnd1", "Do Not Disturb for 1 hour", "", "alert", "Actions"))
+        if self.current_key.startswith(("bot:", "group:")):
+            out.append(Entry("action:export", "Export this chat as Markdown…", "", "download", "Actions"))
         out.append(Entry("action:keys", "Keyboard shortcuts", "", "keyboard", "Actions", "Ctrl+/"))
         return out
 
     def quick_switch(self) -> None:
-        d = QuickSwitcher(self.palette_entries(), load_ui_config().get("recent", []), self)
+        d = QuickSwitcher(self.palette_entries(), load_ui_config().get("recent", []), self, self._search)
         d.chosen.connect(self._quick_chosen)
         g = self.geometry()
         d.move(g.x() + (g.width() - d.width()) // 2, g.y() + 90)
         d.exec()
+
+    def _search(self, text: str, done) -> None:
+        self.api.get("/api/search", lambda d: done(text, d), lambda _e: None, params={"q": text, "limit": 12})
+
+    def _set_dnd(self, secs: int) -> None:
+        until = time.time() + secs if secs > 0 else 0
+        self.api.put("/api/settings", {"notifications.dnd_until": until}, lambda s: (setattr(self.store, "settings", s), self.store.settingsChanged.emit(),
+                                                                                  self.toast("Do Not Disturb until " + time.strftime("%H:%M", time.localtime(until)) + "." if until else "Do Not Disturb is off.")))
 
     def _quick_chosen(self, key: str) -> None:
         cfg = load_ui_config()
@@ -747,6 +812,17 @@ class MainWindow(QMainWindow):
             self.toast("Asked every running Bot to stop.")
         elif key == "action:keys":
             self.show_shortcuts()
+        elif key == "action:dnd1":
+            self._set_dnd(3600)
+        elif key == "action:dndoff":
+            self._set_dnd(0)
+        elif key == "action:export":
+            self.chat.export_chat()
+        elif key.startswith("thread:"):
+            _, tid, bid = key.split(":", 2)
+            self.open_thread(tid, bid)
+        elif key.startswith("memory:"):
+            self.select(f"bot:{key.split(':', 1)[1]}")
         else:
             self.select(key)
 
@@ -837,6 +913,8 @@ class MainWindow(QMainWindow):
     # -------------------------------------------------------------- notifications
     def on_notification(self, n: dict) -> None:
         self.last_notification = n
+        if n.get("muted"):   # quiet hours / Do Not Disturb: it is in the Inbox, nothing pops up or beeps
+            return
         here = self.isActiveWindow() and self.stack.currentWidget() is self.chat and self.chat.thread_id == n.get("thread_id")
         cfg = self.store.settings.get("notifications", {})
         if here:
