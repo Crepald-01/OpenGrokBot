@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenGrokBot: AI teammates on a computer of their own</title>
+<meta name="description" content="Download OpenGrokBot for Windows. Free, open-source AI teammates (Bots) that work in a real browser on a computer of their own and ask you only when something needs your approval.">
+<meta name="theme-color" content="#0e1014">
+<meta property="og:title" content="OpenGrokBot: AI teammates on a computer of their own">
+<meta property="og:description" content="Free, open-source Windows app. Named Bots with memory that work across apps and websites and ask before anything consequential.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="img/chat-approval.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+<script>document.documentElement.classList.remove("no-js");</script>
+</head>
+<body>
+
+<!-- icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3.4 16a2 2 0 0 1 3.2-2.4L8 15"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v6M15 2v6"/><path d="M6 8h12v4a6 6 0 0 1-12 0z"/><path d="M12 18v4"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-win" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M3 5.5l8-1.1v7.1H3zM12 4.3l9-1.3v8.5h-9zM3 12.5h8v7.1l-8-1.1zM12 12.5h9V21l-9-1.3z"/></symbol>
+    <symbol id="i-gh" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.69 1.25 3.35.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.83 1.18 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></symbol>
+  </defs>
+</svg>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="OpenGrokBot home"><img src="favicon.svg" alt="" width="30" height="30">OpenGrokBot</a>
+    <nav class="links" aria-label="Sections">
+      <a href="#features">Features</a>
+      <a href="#screens">Screens</a>
+      <a href="#how">How it works</a>
+      <a href="#safety">Safety</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <span class="grow"></span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Toggle light and dark theme"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-moon"/></svg></button>
+    <a class="icon-btn" data-repo-link href="https://github.com/Crepald-01/OpenGrokBot" aria-label="OpenGrokBot on GitHub" rel="noopener"><svg><use href="#i-gh"/></svg></a>
+    <a class="btn primary sm" data-dl href="#download"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-down"/></svg>Download</a>
+  </div>
+</header>
+
+<main id="top">
+  <!-- hero -->
+  <section class="hero" style="padding-top:148px">
+    <div class="wrap">
+      <span class="pill rv"><b>Open source</b> Free for Windows 10 and 11</span>
+      <h1 class="rv" style="--d:.05s">AI teammates, on a <span class="grad">computer of their own.</span></h1>
+      <p class="lead rv" style="--d:.1s">Create named Bots with a job and a memory that grows. Message one a task and it works across apps and websites, keeps you posted, and comes back only when something needs your approval.</p>
+      <div class="cta rv" style="--d:.15s">
+        <a class="btn primary lg" data-dl href="#download"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><use href="#i-down"/></svg>Download for Windows <span data-ver style="opacity:.75;font-weight:550"></span></a>
+        <a class="btn lg" data-repo-link href="https://github.com/Crepald-01/OpenGrokBot" rel="noopener"><svg><use href="#i-gh"/></svg>View on GitHub</a>
+      </div>
+      <p class="meta rv" style="--d:.2s">
+        <span><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>No Python needed</span>
+        <span><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>No admin rights</span>
+        <span><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>MIT licensed</span>
+        <span><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>Your keys stay on your PC</span>
+      </p>
+      <p class="os-note" id="osnote">The desktop app is for Windows. On Linux, macOS or Docker you can run the headless service and use it from your phone or the browser. See the <a data-repo-link href="https://github.com/Crepald-01/OpenGrokBot#readme">README</a>.</p>
+
+      <div class="shot-wrap rv" style="--d:.25s" id="heroshot">
+        <div class="window">
+          <div class="bar"><img src="favicon.svg" alt="" width="16" height="16">OpenGrokBot<span class="ctl" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <img class="shot" src="img/chat-approval.png" width="1320" height="840" alt="OpenGrokBot: the Inbox Bot asks for approval before overwriting a file">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- providers -->
+  <div class="strip">
+    <div class="wrap rv">
+      <small>Bring your own model</small>
+      <div class="chips">
+        <span class="chip">Anthropic</span><span class="chip">OpenAI</span><span class="chip">OpenRouter</span><span class="chip">Groq</span><span class="chip">Ollama</span><span class="chip">LM Studio</span><span class="chip">Any OpenAI-compatible API</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- features -->
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head center rv">
+        <span class="eyebrow">What you get</span>
+        <h2>A team that works while you don't</h2>
+        <p>Hand off the work, not the control. Everything a Bot does is visible, and everything consequential waits for you.</p>
+      </div>
+      <div class="grid3">
+        <article class="card rv"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-power"/></svg></div><h3>Always on</h3><p>A background service keeps Bots, routines and unfinished tasks running with the window closed. Interrupted work resumes after a restart.</p></article>
+        <article class="card rv" style="--d:.05s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-monitor"/></svg></div><h3>A computer of their own</h3><p>One shared computer with a real Chromium browser, a workspace and a terminal. Log in to a site once and every Bot can use it, each on its own screen.</p></article>
+        <article class="card rv" style="--d:.1s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-hand"/></svg></div><h3>Take over any time</h3><p>Hit a CAPTCHA, login or 2FA and the Bot hands that step to you. Drive its browser like a remote desktop, then hand back. Bots never type passwords.</p></article>
+        <article class="card rv"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-db"/></svg></div><h3>Memory that compounds</h3><p>Each Bot remembers your preferences, your voice and past work, and you can read and edit all of it. Stale facts are flagged to re-check.</p></article>
+        <article class="card rv" style="--d:.05s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-users"/></svg></div><h3>Teams that coordinate</h3><p>Bots message each other, share group chats with @mentions and hand tasks over with a single owner. A Chief of Staff can run point for specialists.</p></article>
+        <article class="card rv" style="--d:.1s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rec"/></svg></div><h3>Learn by demonstration</h3><p>Press Follow along, do the job once, and the Bot drafts a skill from what you did. Test it, activate it, then schedule it as a routine.</p></article>
+        <article class="card rv"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-spark"/></svg></div><h3>Any model, per Bot</h3><p>Anthropic or any OpenAI-compatible endpoint. Models are detected from your provider into a dropdown, and each Bot can use a different one.</p></article>
+        <article class="card rv" style="--d:.05s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-plug"/></svg></div><h3>Plugins and MCP</h3><p>Built-in Gmail, Calendar, Slack, Notion, Linear, Jira and GitHub, a generic REST connector, your own plugins, and any MCP server.</p></article>
+        <article class="card rv" style="--d:.1s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-phone"/></svg></div><h3>On your phone too</h3><p>A mobile web app with the same chats, live streaming, approvals and take-over view. Add push alerts with the free ntfy app.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- screens -->
+  <section id="screens">
+    <div class="wrap">
+      <div class="sec-head center rv">
+        <span class="eyebrow">Take a look</span>
+        <h2>Clean, calm and in your control</h2>
+      </div>
+      <div class="tabs rv" role="tablist" aria-label="Screenshots">
+        <button class="tab" role="tab" aria-selected="true" data-img="chat-approval" data-cap="Bots work end to end and ask before anything consequential. Approve once, or allow it always.">Approvals</button>
+        <button class="tab" role="tab" aria-selected="false" data-img="welcome" data-cap="Pick a role or describe your own. A starter team sets up a Chief of Staff and specialists in one group chat.">Get started</button>
+        <button class="tab" role="tab" aria-selected="false" data-img="models" data-cap="Choose from the models your provider reports, or type your own. Keys are stored in Windows Credential Manager.">Models</button>
+        <button class="tab" role="tab" aria-selected="false" data-img="plugins" data-cap="Connectors read freely. Anything that writes or sends asks first, and a Bot only gets a connector once you grant it.">Connectors</button>
+        <button class="tab" role="tab" aria-selected="false" data-img="light-theme" data-cap="Dark by default, with a light theme that switches instantly.">Light theme</button>
+      </div>
+      <div class="show rv">
+        <div class="window">
+          <div class="bar"><img src="favicon.svg" alt="" width="16" height="16">OpenGrokBot<span class="ctl" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <img class="shot" id="showimg" src="img/chat-approval.png" width="1320" height="840" alt="OpenGrokBot screenshot" loading="lazy">
+        </div>
+        <p class="caption" id="showcap">Bots work end to end and ask before anything consequential. Approve once, or allow it always.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- how -->
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head center rv">
+        <span class="eyebrow">Up and running</span>
+        <h2>Three steps, no workflow builder</h2>
+        <p>Setup is a message, not a diagram.</p>
+      </div>
+      <div class="steps">
+        <div class="step rv"><h3>Install it</h3><p>Run the installer. It sets up the app and offers to download the Chromium browser engine (about 150 MB) your Bots will use.</p></div>
+        <div class="step rv" style="--d:.05s"><h3>Add a model</h3><p>In <code>Settings &gt; Models</code> paste a key, then pick a model from the dropdown. Running Ollama or LM Studio locally needs no key.</p></div>
+        <div class="step rv" style="--d:.1s"><h3>Hire a Bot</h3><p>Pick a role like Inbox, Researcher or Bug Fixer, or describe your own, then message it the task, the context and the finish line.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- safety -->
+  <section id="safety">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <span class="eyebrow">Safety</span>
+        <h2>Autonomous, not unsupervised</h2>
+        <p>Bots do the work end to end and stop for the actions that matter.</p>
+      </div>
+      <div class="safety">
+        <div class="panel rv">
+          <h3>Bots ask before they</h3>
+          <p>You approve each one once, or set a standing rule you can delete later.</p>
+          <ul class="ask">
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Send email or messages</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Submit forms</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Buy anything</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Delete or overwrite files</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Run unfamiliar commands</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Install or download</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Log in to a new service</li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>Use a new connector</li>
+          </ul>
+          <p class="note"><b>Want fewer prompts?</b> Auto Review lets a reviewer model approve clearly low-risk actions and escalate everything else to you. Purchases, logins and new connectors always ask.</p>
+        </div>
+        <div class="panel rv" style="--d:.07s">
+          <h3>Built-in protections</h3>
+          <ul class="checks">
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg><span><b>Prompt-injection defense.</b> Web pages, emails and files are treated as untrusted data, and a suspicious one switches off auto-approval for that task.</span></li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg><span><b>Network rules.</b> Allow and deny lists per Bot, with local and private addresses blocked by default.</span></li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg><span><b>Secrets stay out of reach.</b> Keys live in Windows Credential Manager and are never shown to the model.</span></li>
+            <li><svg fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg><span><b>Full action log.</b> Every tool call, page and file, per Bot, exportable.</span></li>
+          </ul>
+          <p class="honest">Honest limits: the terminal guard is a heuristic, not an OS sandbox. For hard isolation, run the computer in a VM or Docker.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- download -->
+  <section id="download">
+    <div class="wrap">
+      <div class="dl rv">
+        <div>
+          <span class="eyebrow">Download</span>
+          <h2 style="margin-top:12px">Get OpenGrokBot for Windows</h2>
+          <p class="lead">One installer, no Python, no admin prompt. Install it for just your account, and upgrade any time without losing your Bots.</p>
+          <div class="cta">
+            <a class="btn primary lg" data-dl href="#download"><svg style="width:20px;height:20px"><use href="#i-win"/></svg>Download installer <span data-ver style="opacity:.75;font-weight:550"></span></a>
+          </div>
+          <p class="meta" style="justify-content:flex-start"><span id="dlname">OpenGrokBot-Setup.exe</span></p>
+        </div>
+        <ul class="facts">
+          <li><span>Version</span><span data-ver-plain>1.0.0</span></li>
+          <li><span>Size</span><span data-size>about 80 MB</span></li>
+          <li><span>Requires</span><span>Windows 10 or 11, 64-bit</span></li>
+          <li><span>Installs to</span><span>Your user folder, no admin</span></li>
+          <li><span>License</span><span>MIT, free and open source</span></li>
+        </ul>
+
+        <div class="smart">
+          <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-warn"/></svg>
+          <div>
+            <b>Windows may say "Windows protected your PC".</b>
+            <p>The installer isn't code-signed yet, so SmartScreen warns about any new unsigned app. Choose <b>More info</b>, then <b>Run anyway</b>, or check the SHA-256 below first.</p>
+          </div>
+        </div>
+
+        <div class="hash">
+          <label for="sha">SHA-256 checksum</label>
+          <div class="code"><code id="sha">d9cad5f346798613c9ba8deb13fff09f1e0784d1d3c8bd5e16587b8c6df19137</code>
+            <button class="btn sm" type="button" data-copy="sha"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+          <label for="verify" style="margin-top:18px">Verify in PowerShell</label>
+          <div class="code"><code id="verify">Get-FileHash .\OpenGrokBot-Setup-1.0.0.exe -Algorithm SHA256</code>
+            <button class="btn sm" type="button" data-copy="verify"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+          <label for="silent" style="margin-top:18px">Unattended install</label>
+          <div class="code"><code id="silent">.\OpenGrokBot-Setup-1.0.0.exe /VERYSILENT /CURRENTUSER</code>
+            <button class="btn sm" type="button" data-copy="silent"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+        </div>
+
+        <div class="alt">
+          <a data-repo-link data-path="/releases" href="https://github.com/Crepald-01/OpenGrokBot/releases" rel="noopener">All releases</a>
+          <a data-repo-link href="https://github.com/Crepald-01/OpenGrokBot" rel="noopener">Source code</a>
+          <a data-repo-link data-path="#quick-start" href="https://github.com/Crepald-01/OpenGrokBot#quick-start" rel="noopener">Run from source with Python</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- faq -->
+  <section id="faq">
+    <div class="wrap">
+      <div class="sec-head center rv"><span class="eyebrow">Questions</span><h2>Good to know</h2></div>
+      <div class="faq">
+        <details class="rv" open><summary>Is it really free?</summary><div class="a"><p>Yes. OpenGrokBot is open source under the MIT license and costs nothing. You pay your model provider for usage, or use free OpenRouter models, or run a local model with Ollama or LM Studio.</p><p>Free OpenRouter models have per-account daily limits, so they suit trying it out or light use more than heavy daily work.</p></div></details>
+        <details class="rv"><summary>Do I need to install Python?</summary><div class="a"><p>No. The installer includes everything the app needs. The only extra download is the Chromium browser engine (about 150 MB), which the installer offers during setup.</p></div></details>
+        <details class="rv"><summary>Which AI models work?</summary><div class="a"><p>Anthropic, and any OpenAI-compatible endpoint: OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM and more. Pick a model that supports tool calling, and a vision model for Bots that browse, since they work from screenshots.</p></div></details>
+        <details class="rv"><summary>Why does Windows warn me when I run the installer?</summary><div class="a"><p>The installer is not code-signed yet, and SmartScreen shows a warning for new unsigned apps. Choose <b>More info</b> then <b>Run anyway</b>. To be sure the file is the one published here, compare its SHA-256 checksum with the one in the download section.</p></div></details>
+        <details class="rv"><summary>Can a Bot do something I didn't approve?</summary><div class="a"><p>Sending, submitting, buying, deleting, running unfamiliar commands, installing, logging in and granting new connectors all ask first. The terminal guard is a heuristic and not an operating-system sandbox, so for hard isolation run the computer in a VM or Docker. Only install plugins you trust, since code plugins run with your permissions.</p></div></details>
+        <details class="rv"><summary>Where is my data and where are my keys?</summary><div class="a"><p>Conversations, memory, skills and the shared workspace are in <code>%APPDATA%\OpenGrokBot</code> on your PC. API keys and connector tokens are stored in Windows Credential Manager, never in files or the database.</p></div></details>
+        <details class="rv"><summary>Is there a Mac or Linux version?</summary><div class="a"><p>The desktop app is built for Windows. The headless service also runs on Linux, macOS and Docker, and you can use it from any browser or from the mobile web app.</p></div></details>
+        <details class="rv"><summary>How do I uninstall it?</summary><div class="a"><p>Use <b>Settings &gt; Apps</b> in Windows. The uninstaller stops the background service and asks whether to keep or delete your Bots and settings. Keys saved in Credential Manager are not removed.</p></div></details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="brand" href="#top"><img src="favicon.svg" alt="" width="30" height="30">OpenGrokBot</a>
+      <small>An independent open-source project inspired by the "team of always-on AI teammates" idea. Not affiliated with or endorsed by xAI or Cursor.</small>
+    </div>
+    <nav aria-label="Footer">
+      <a href="#download">Download</a>
+      <a data-repo-link href="https://github.com/Crepald-01/OpenGrokBot" rel="noopener">GitHub</a>
+      <a data-repo-link data-path="/releases" href="https://github.com/Crepald-01/OpenGrokBot/releases" rel="noopener">Releases</a>
+      <a data-repo-link data-path="/issues" href="https://github.com/Crepald-01/OpenGrokBot/issues" rel="noopener">Issues</a>
+      <a data-repo-link data-path="/blob/main/LICENSE" href="https://github.com/Crepald-01/OpenGrokBot/blob/main/LICENSE" rel="noopener">MIT License</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

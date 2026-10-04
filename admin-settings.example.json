@@ -1,0 +1,25 @@
+{
+  "_comment": "Copy to %PROGRAMDATA%\\OpenGrokBot\\admin.json (or set OPENGROKBOT_ADMIN to its path) to preset policy for everyone using this PC. Remove this key if you like; unknown keys are ignored.",
+
+  "network_policy": {
+    "mode": "allowlist",
+    "allow": ["*.example.com", "github.com", "*.github.com", "*.atlassian.net", "slack.com", "*.slack.com"],
+    "deny": ["*.bad.example"],
+    "block_private": true,
+    "locked": true
+  },
+
+  "approval_defaults": {
+    "mode": "ask",
+    "locked": true,
+    "always_ask_categories": ["send", "purchase", "delete", "login", "install"]
+  },
+
+  "allowed_plugins": ["github", "slack", "notion", "linear", "jira"],
+  "allowed_mcp_servers": [],
+  "allowed_providers": ["anthropic", "openrouter"],
+  "allow_plugin_install": false,
+  "allow_remote_mode": true,
+  "max_steps": 60,
+  "weekly_token_limit": 5000000
+}

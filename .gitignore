@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.spec
+*.egg-info/
+.idea/
+.vscode/
+assets/icon.ico
+admin.json
+service_token.txt

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
+<title>OpenGrokBot</title>
+</head>
+<body>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<section id="login" hidden>
+  <div class="login-card">
+    <div class="logo">🤖</div>
+    <h1>OpenGrokBot</h1>
+    <p class="muted">Enter the access token shown in the desktop app under Settings &gt; Mobile.</p>
+    <input id="token" type="password" placeholder="Access token" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="login-btn" class="primary">Connect</button>
+    <p id="login-err" class="err"></p>
+  </div>
+</section>
+
+<main id="app" hidden>
+  <header id="topbar">
+    <button id="back" class="icon" aria-label="Back" hidden>‹</button>
+    <div id="title">Bots</div>
+    <div id="conn" class="dot off" title="Connection"></div>
+  </header>
+
+  <section id="view-bots" class="view"></section>
+
+  <section id="view-chat" class="view" hidden>
+    <div id="chat-status" class="chat-status" hidden></div>
+    <div id="messages"></div>
+    <div id="chat-approvals"></div>
+    <form id="composer">
+      <textarea id="input" rows="1" placeholder="Message…" enterkeyhint="send"></textarea>
+      <button id="stop" type="button" class="stop" hidden>Stop</button>
+      <button id="send" type="submit" class="primary">Send</button>
+    </form>
+  </section>
+
+  <section id="view-approvals" class="view" hidden></section>
+  <section id="view-settings" class="view" hidden></section>
+
+  <section id="view-screen" class="view" hidden>
+    <div class="screen-bar">
+      <button id="scr-back" class="small">‹ Back</button>
+      <button id="scr-reload" class="small">⟳</button>
+      <input id="scr-url" placeholder="Go to URL" inputmode="url" autocapitalize="off">
+      <button id="scr-go" class="small">Go</button>
+    </div>
+    <div class="screen-wrap"><img id="scr-img" alt="Bot screen"></div>
+    <div class="screen-bar">
+      <input id="scr-text" placeholder="Type into the page…">
+      <button id="scr-type" class="small">Type</button>
+      <button id="scr-enter" class="small">⏎</button>
+      <button id="scr-up" class="small">▲</button>
+      <button id="scr-down" class="small">▼</button>
+    </div>
+    <button id="scr-done" class="primary wide">Hand back to the Bot</button>
+  </section>
+
+  <nav id="tabs">
+    <button data-view="bots" class="active">Bots</button>
+    <button data-view="approvals">Approvals <span id="badge" hidden>0</span></button>
+    <button data-view="settings">Settings</button>
+  </nav>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

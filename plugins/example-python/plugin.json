@@ -1,0 +1,11 @@
+{
+  "id": "example-python",
+  "name": "Example Python plugin",
+  "version": "1.0.0",
+  "description": "A starting point for code plugins: shows register(api), tools and risk levels.",
+  "help": "Python plugins run inside the service process. Only install code you trust. See plugin.py.",
+  "entry": "plugin.py",
+  "fields": [
+    {"key": "greeting", "label": "Greeting text", "secret": false, "required": false, "default": "Hello"}
+  ]
+}

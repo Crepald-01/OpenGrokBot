@@ -1,0 +1,23 @@
+{
+  "id": "hacker-news",
+  "name": "Hacker News",
+  "version": "1.0.0",
+  "description": "Top stories and item lookup from the public Hacker News API.",
+  "fields": [],
+  "tools": [
+    {
+      "name": "top_story_ids",
+      "description": "IDs of the current top stories (newest ranking first).",
+      "input_schema": {"type": "object", "properties": {}},
+      "request": {"method": "GET", "url": "https://hacker-news.firebaseio.com/v0/topstories.json"},
+      "risk": "safe"
+    },
+    {
+      "name": "get_item",
+      "description": "Fetch a story or comment by id (title, url, score, text).",
+      "input_schema": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]},
+      "request": {"method": "GET", "url": "https://hacker-news.firebaseio.com/v0/item/{id}.json"},
+      "risk": "safe"
+    }
+  ]
+}

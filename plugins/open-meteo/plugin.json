@@ -1,0 +1,27 @@
+{
+  "id": "open-meteo",
+  "name": "Open-Meteo Weather",
+  "version": "1.0.0",
+  "description": "Free weather forecasts and place lookup. No API key needed.",
+  "help": "Declarative plugin: each tool is just an HTTP request described in this file. No code runs.",
+  "fields": [],
+  "tools": [
+    {
+      "name": "find_place",
+      "description": "Look up latitude/longitude for a place name.",
+      "input_schema": {"type": "object", "properties": {"name": {"type": "string", "description": "City or place name"}}, "required": ["name"]},
+      "request": {"method": "GET", "url": "https://geocoding-api.open-meteo.com/v1/search", "query": {"name": "{name}", "count": "3"}},
+      "response_path": "results",
+      "risk": "safe"
+    },
+    {
+      "name": "forecast",
+      "description": "7-day forecast (max/min temperature, precipitation) for coordinates.",
+      "input_schema": {"type": "object", "properties": {"latitude": {"type": "number"}, "longitude": {"type": "number"}}, "required": ["latitude", "longitude"]},
+      "request": {"method": "GET", "url": "https://api.open-meteo.com/v1/forecast",
+                  "query": {"latitude": "{latitude}", "longitude": "{longitude}", "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum", "timezone": "auto"}},
+      "response_path": "daily",
+      "risk": "safe"
+    }
+  ]
+}

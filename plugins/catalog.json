@@ -1,0 +1,7 @@
+{
+  "plugins": [
+    {"id": "open-meteo", "name": "Open-Meteo Weather", "description": "Free weather forecasts and place lookup. No API key needed.", "kind": "declarative", "source": "bundled:plugins/open-meteo"},
+    {"id": "hacker-news", "name": "Hacker News", "description": "Top stories and item lookup from the public Hacker News API.", "kind": "declarative", "source": "bundled:plugins/hacker-news"},
+    {"id": "example-python", "name": "Example Python plugin", "description": "A starting point for code plugins: shows register(api), tools and risk levels.", "kind": "python", "source": "bundled:plugins/example-python"}
+  ]
+}
