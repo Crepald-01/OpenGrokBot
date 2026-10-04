@@ -33,6 +33,7 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 - **Memory that compounds.** Per-Bot preferences, role context, your voice and past work, visible and editable. Stale facts are flagged *re-check*.
 - **Teams.** Bots message each other, work in group chats with `@mentions`, and hand off tasks with a single owner. A Chief of Staff Bot coordinates specialists.
 - **Learn by demonstration.** Press *Follow along*, do the job once, and the Bot drafts a **skill** from what you did. Test it, activate it, schedule it as a **routine**.
+- **Home dashboard.** One screen for the whole team: what needs you, who is working, token use for the week and recent actions. `Ctrl+K` opens a command palette, `Ctrl+1`-`9` jump to a Bot, and Settings > App lets you pick an accent colour, density and text size.
 - **Routines.** Run a skill or prompt on a cron schedule, per Bot, with history and notifications.
 - **Bring your own model.** Anthropic or any OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM...). Models are **detected from your provider** and offered in a dropdown, and every Bot can use its own provider and model.
 - **Plugins and MCP.** Built-in Gmail, Google Calendar, Slack, Notion, Linear, Jira, GitHub and a generic REST connector, plus declarative or Python plugins and any MCP server.
@@ -47,6 +48,14 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 <tr>
 <td width="50%"><img src="docs/screenshots/plugins.png" alt="Plugins and connectors page"><br><sub><b>Connectors.</b> Reads run freely; anything that writes or sends asks first.</sub></td>
 <td width="50%"><img src="docs/screenshots/light-theme.png" alt="Light theme"><br><sub><b>Themes.</b> Dark by default, with a light theme.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/home.png" alt="Home dashboard"><br><sub><b>Home.</b> What needs you, who is working and what just happened.</sub></td>
+<td width="50%"><img src="docs/screenshots/palette.png" alt="Command palette"><br><sub><b>Command palette.</b> <code>Ctrl+K</code> to reach any Bot, page or action.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/appearance.png" alt="Violet accent, compact density, large text"><br><sub><b>Make it yours.</b> Accent colour, density and text size.</sub></td>
+<td width="50%"><img src="docs/screenshots/light-home.png" alt="Home in the light theme"><br><sub><b>Light, too.</b> Every accent works in both themes.</sub></td>
 </tr>
 </table>
 

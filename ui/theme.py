@@ -25,6 +25,45 @@ _name = "dark"
 
 FONT = '"Segoe UI Variable Text", "Segoe UI", "Inter", "SF Pro Text", "Helvetica Neue", Arial, sans-serif'
 
+# Appearance options (stored per user in the UI config, not in the service): accent colour, density and text size.
+ACCENTS = {   # key: (label, dark-theme colour, light-theme colour)
+    "indigo": ("Indigo", "#7c9cff", "#3d63dd"),
+    "violet": ("Violet", "#a58bff", "#6d4fe0"),
+    "teal": ("Teal", "#47c7bd", "#0f8f89"),
+    "green": ("Green", "#5bc48a", "#2a9460"),
+    "amber": ("Amber", "#f0b45a", "#b36a00"),
+    "rose": ("Rose", "#f27a9d", "#d03c6c"),
+}
+DENSITIES = {"comfortable": ("Comfortable", 1.0), "compact": ("Compact", 0.78)}
+TEXT_SIZES = {"small": ("Small", 12), "default": ("Default", 13), "large": ("Large", 15)}
+_opts = {"accent": "indigo", "density": "comfortable", "text": "default"}
+
+
+def _mix(a: str, b: str, t: float) -> str:
+    """Blend colour a towards b by t (0..1)."""
+    ca, cb = QColor(a), QColor(b)
+    return QColor(round(ca.red() + (cb.red() - ca.red()) * t), round(ca.green() + (cb.green() - ca.green()) * t),
+                  round(ca.blue() + (cb.blue() - ca.blue()) * t)).name()
+
+
+def _luma(c: str) -> float:
+    q = QColor(c)
+    return 0.299 * q.redF() + 0.587 * q.greenF() + 0.114 * q.blueF()
+
+
+def _rebuild() -> None:
+    base = LIGHT if _name == "light" else DARK
+    _current.clear()
+    _current.update(base)
+    label, dark_c, light_c = ACCENTS[_opts["accent"]]
+    acc = light_c if _name == "light" else dark_c
+    bg, panel = base["bg"], base["panel"]
+    _current.update(
+        accent=acc, accent_hi=_mix(acc, "#ffffff", 0.18 if _name == "dark" else 0.12),
+        accent_text="#0b0e16" if _luma(acc) > 0.55 else "#ffffff",
+        accent_dim=_mix(panel, acc, 0.30 if _name == "dark" else 0.22), accent_soft=_mix(panel, acc, 0.14 if _name == "dark" else 0.09),
+        select=_mix(panel, acc, 0.16 if _name == "dark" else 0.11), user=_mix(bg, acc, 0.26 if _name == "dark" else 0.16))
+
 
 def palette() -> dict:
     return _current
@@ -37,9 +76,32 @@ def theme_name() -> str:
 def set_theme(name: str) -> dict:
     global _name
     _name = "light" if name == "light" else "dark"
-    _current.clear()
-    _current.update(LIGHT if _name == "light" else DARK)
+    _rebuild()
     return _current
+
+
+def configure(accent: str | None = None, density: str | None = None, text: str | None = None) -> None:
+    """Set appearance options (unknown values are ignored) and recompute the palette."""
+    if accent in ACCENTS:
+        _opts["accent"] = accent
+    if density in DENSITIES:
+        _opts["density"] = density
+    if text in TEXT_SIZES:
+        _opts["text"] = text
+    _rebuild()
+
+
+def options() -> dict:
+    return dict(_opts)
+
+
+def dp(n: float) -> int:
+    """Scale a spacing value by the density setting (compact = tighter)."""
+    return max(1, round(n * DENSITIES[_opts["density"]][1]))
+
+
+def base_size() -> int:
+    return TEXT_SIZES[_opts["text"]][1]
 
 
 def _arrow_url(color: str) -> str:
@@ -62,40 +124,45 @@ def _arrow_url(color: str) -> str:
 def qss() -> str:
     c = _current
     arrow = _arrow_url(c["muted"])
+    fs, small, tiny = base_size(), base_size() - 1, base_size() - 2
+    bv, bh = dp(6), dp(14) if dp(14) > 9 else 9
+    iv = dp(8)
     arrow_rule = f"QComboBox::down-arrow {{ image: url({arrow}); width: 12px; height: 12px; }}" if arrow else ""
     return f"""
-* {{ font-family: {FONT}; font-size: 13px; color: {c['text']}; outline: none; }}
+* {{ font-family: {FONT}; font-size: {fs}px; color: {c['text']}; outline: none; }}
 QWidget {{ background: transparent; }}
 QMainWindow, QDialog, QMessageBox, QInputDialog, QWidget#root {{ background: {c['bg']}; }}
 QToolTip {{ background: {c['raised']}; color: {c['text']}; border: 1px solid {c['line2']}; padding: 5px 8px; border-radius: 6px; }}
 
 QLabel[muted="true"] {{ color: {c['muted']}; }}
-QLabel[faint="true"] {{ color: {c['faint']}; font-size: 12px; }}
+QLabel[faint="true"] {{ color: {c['faint']}; font-size: {small}px; }}
 QLabel[h1="true"] {{ font-size: 22px; font-weight: 600; letter-spacing: -0.2px; }}
 QLabel[h2="true"] {{ font-size: 14px; font-weight: 600; }}
 QLabel[eyebrow="true"] {{ color: {c['faint']}; font-size: 11px; font-weight: 600; letter-spacing: 1px; }}
-QLabel[chip="true"] {{ background: {c['panel2']}; color: {c['muted']}; border-radius: 9px; padding: 2px 10px; font-size: 11px; }}
-QLabel[chip="ok"] {{ background: {c['ok_bg']}; color: {c['ok']}; border-radius: 9px; padding: 2px 10px; font-size: 11px; }}
-QLabel[chip="warn"] {{ background: {c['warn_bg']}; color: {c['warn']}; border-radius: 9px; padding: 2px 10px; font-size: 11px; }}
-QLabel[chip="bad"] {{ background: {c['bad_bg']}; color: {c['bad']}; border-radius: 9px; padding: 2px 10px; font-size: 11px; }}
-QLabel[chip="work"] {{ background: {c['accent_dim']}; color: {c['accent']}; border-radius: 9px; padding: 2px 10px; font-size: 11px; }}
+QLabel[chip="true"] {{ background: {c['panel2']}; color: {c['muted']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
+QLabel[chip="ok"] {{ background: {c['ok_bg']}; color: {c['ok']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
+QLabel[chip="warn"] {{ background: {c['warn_bg']}; color: {c['warn']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
+QLabel[chip="bad"] {{ background: {c['bad_bg']}; color: {c['bad']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
+QLabel[chip="work"] {{ background: {c['accent_dim']}; color: {c['accent']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
 QLabel[badge="true"] {{ background: {c['accent']}; color: {c['accent_text']}; border-radius: 9px; padding: 0px 6px; font-size: 11px; font-weight: 600; }}
 
-QFrame[card="true"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
+QFrame[card="true"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 14px; }}
 QFrame[card="hover"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
 QFrame[card="hover"]:hover {{ border: 1px solid {c['accent_dim']}; background: {c['hover']}; }}
 QFrame[card="approval"] {{ background: {c['warn_bg']}; border: 1px solid {c['line2']}; border-left: 3px solid {c['warn']}; border-radius: 12px; }}
 QFrame[card="question"] {{ background: {c['accent_soft']}; border: 1px solid {c['line2']}; border-left: 3px solid {c['accent']}; border-radius: 12px; }}
+QFrame[card="tile"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 14px; }}
+QFrame[card="tile"][hot="true"] {{ background: {c['warn_bg']}; border: 1px solid {c['line2']}; }}
 QFrame[card="plain"] {{ background: transparent; border: none; }}
 QFrame[sep="true"] {{ background: {c['line']}; max-height: 1px; min-height: 1px; border: none; }}
 QFrame[vsep="true"] {{ background: {c['line']}; max-width: 1px; min-width: 1px; border: none; }}
 QFrame#sidebar {{ background: {c['panel']}; border-right: 1px solid {c['line']}; }}
-QFrame#composer {{ background: {c['panel']}; border: 1px solid {c['line2']}; border-radius: 16px; }}
+QFrame#composer {{ background: {c['panel']}; border: 1px solid {c['line2']}; border-radius: 18px; }}
 QFrame#composer:focus-within {{ border: 1px solid {c['accent']}; }}
 QFrame#activity {{ background: {c['panel']}; border-left: 1px solid {c['line']}; }}
 QFrame#toolgroup {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 10px; }}
 
-QPushButton {{ background: {c['panel2']}; border: 1px solid {c['line2']}; border-radius: 8px; padding: 6px 14px; min-height: 18px; }}
+QPushButton {{ background: {c['panel2']}; border: 1px solid {c['line2']}; border-radius: 9px; padding: {bv}px {bh}px; min-height: 18px; }}
 QPushButton:hover {{ background: {c['raised']}; }}
 QPushButton:pressed {{ background: {c['line2']}; }}
 QPushButton:disabled {{ color: {c['faint']}; background: {c['panel']}; border-color: {c['line']}; }}
@@ -135,7 +202,7 @@ QCheckBox::indicator:hover {{ border-color: {c['accent']}; }}
 QCheckBox::indicator:checked {{ background: {c['accent']}; border-color: {c['accent']}; image: none; }}
 
 QListWidget, QTreeWidget, QTableWidget, QListView {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
-QListWidget::item {{ padding: 8px 10px; border-radius: 8px; margin: 1px 4px; }}
+QListWidget::item {{ padding: {iv}px 10px; border-radius: 8px; margin: 1px 4px; }}
 QListWidget::item:selected {{ background: {c['select']}; color: {c['text']}; }}
 QListWidget::item:hover:!selected {{ background: {c['hover']}; }}
 QHeaderView {{ background: transparent; }}
@@ -177,6 +244,9 @@ QDialogButtonBox QPushButton:default:hover {{ background: {c['accent_hi']}; }}
 QFrame[siderow="true"] {{ background: transparent; border-radius: 9px; }}
 QFrame[siderow="true"]:hover {{ background: {c['hover']}; }}
 QFrame[siderow="true"][checked="true"] {{ background: {c['select']}; }}
+QFrame[swatch="true"] {{ border-radius: 13px; border: 2px solid transparent; }}
+QFrame[swatch="true"][on="true"] {{ border: 2px solid {c['text']}; }}
+QLabel[kbd="true"] {{ background: {c['panel2']}; color: {c['muted']}; border: 1px solid {c['line2']}; border-radius: 5px; padding: 1px 6px; font-size: {tiny}px; }}
 """
 
 

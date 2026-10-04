@@ -6,7 +6,7 @@ import sys
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QFrame, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMessageBox, QPlainTextEdit, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
 from core import paths
@@ -14,7 +14,7 @@ from . import theme
 from .api import Api, Connection, load_ui_config, save_ui_config
 from .model_picker import ModelPicker
 from .store import Store
-from .widgets import PageHeader, SideTabs, button, chip, label, page_layout
+from .widgets import PageHeader, SideTabs, button, chip, label, page_layout, repolish
 
 
 def lines(text: str) -> list[str]:
@@ -43,6 +43,37 @@ def qr_pixmap(text: str, size: int = 220) -> QPixmap | None:
                 p.drawRect(int(x * cell), int(y * cell), int(cell) + 1, int(cell) + 1)
     p.end()
     return pm
+
+
+class AccentPicker(QWidget):
+    """A row of colour dots; the picked one gets a ring."""
+
+    def __init__(self, current: str):
+        super().__init__()
+        self.value = current if current in theme.ACCENTS else "indigo"
+        h = _H(self)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(10)
+        self.dots: dict[str, QFrame] = {}
+        light = theme.theme_name() == "light"
+        for key, (name, dark_c, light_c) in theme.ACCENTS.items():
+            d = QFrame()
+            d.setFixedSize(26, 26)
+            d.setProperty("swatch", True)
+            d.setStyleSheet(f"QFrame[swatch=\"true\"] {{ background: {light_c if light else dark_c}; }}")
+            d.setToolTip(name)
+            d.setCursor(Qt.CursorShape.PointingHandCursor)
+            d.mouseReleaseEvent = lambda e, k=key: self.pick(k)  # type: ignore[assignment]
+            self.dots[key] = d
+            h.addWidget(d)
+        h.addStretch(1)
+        self.pick(self.value)
+
+    def pick(self, key: str) -> None:
+        self.value = key
+        for k, d in self.dots.items():
+            d.setProperty("on", k == key)
+            repolish(d)
 
 
 def form_tab() -> tuple[QWidget, QVBoxLayout]:
@@ -528,6 +559,19 @@ class SettingsPage(QWidget):
         self.a_theme.addItem("Dark (calm, default)", "dark")
         self.a_theme.addItem("Light", "light")
         f.addRow("Theme", self.a_theme)
+        cfg0 = load_ui_config()
+        self.a_accent = AccentPicker(cfg0.get("accent", "indigo"))
+        f.addRow("Accent colour", self.a_accent)
+        self.a_density = QComboBox()
+        for k, (name, _) in theme.DENSITIES.items():
+            self.a_density.addItem(name, k)
+        self.a_density.setCurrentIndex(max(0, self.a_density.findData(cfg0.get("density", "comfortable"))))
+        f.addRow("Density", self.a_density)
+        self.a_text = QComboBox()
+        for k, (name, px) in theme.TEXT_SIZES.items():
+            self.a_text.addItem(f"{name} ({px}px)", k)
+        self.a_text.setCurrentIndex(max(0, self.a_text.findData(cfg0.get("text", "default"))))
+        f.addRow("Text size", self.a_text)
         v.addLayout(f)
         self.a_tray = QCheckBox("Closing the window keeps the app in the system tray (Bots always keep running in the background service)")
         v.addWidget(self.a_tray)
@@ -583,6 +627,7 @@ class SettingsPage(QWidget):
     def save_app(self) -> None:
         cfg = load_ui_config()
         cfg["close_to_tray"] = self.a_tray.isChecked()
+        cfg.update(accent=self.a_accent.value, density=self.a_density.currentData(), text=self.a_text.currentData())
         save_ui_config(cfg)
         try:
             self._set_autostart(self.a_start.isChecked())

@@ -20,7 +20,7 @@ OUT = Path(sys.argv[1] if len(sys.argv) > 1 else tempfile.mkdtemp(prefix="ui-sho
 OUT.mkdir(parents=True, exist_ok=True)
 
 import uvicorn  # noqa: E402
-from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtCore import QTimer, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from core import agent as agent_mod  # noqa: E402
@@ -95,6 +95,35 @@ def shot(name: str) -> None:
 
 
 pump(1.0)
+win.start_page()
+shot("00-home")
+from ui.main_window import QuickSwitcher, ShortcutsDialog  # noqa: E402
+qs = QuickSwitcher(win.palette_entries(), ["page:usage", f"bot:{inbox['id']}"], win)
+qs.show()
+pump(0.6)
+qs.grab().save(str(OUT / "00-palette.png"))
+qs.input.setText("inb")
+pump(0.4)
+qs.grab().save(str(OUT / "00-palette-search.png"))
+assert qs.list.currentItem() is not None and qs.list.currentItem().data(Qt.ItemDataRole.UserRole) == f"bot:{inbox['id']}", 'search should select the Inbox Bot first'
+qs.close()
+sd = ShortcutsDialog(win)
+sd.show()
+pump(0.4)
+sd.grab().save(str(OUT / "00-shortcuts.png"))
+sd.close()
+# navigation: Ctrl+N jumps to the Nth Bot, Home cards and the "Needs you" Review button open the right chat
+win.jump_to_bot(1)
+assert win.current_key == f"bot:{store.bots[1]['id']}", win.current_key
+win.select("page:home")
+opened: list = []
+win.pages["home"].openBot.connect(opened.append)
+win.pages["home"].openThread.connect(lambda t, b: opened.append(("thread", b)))
+from PySide6.QtWidgets import QPushButton  # noqa: E402
+review = [b for b in win.pages["home"].findChildren(QPushButton) if b.text() == "Review"]
+assert review, "the pending approval should show a Review button on Home"
+review[0].click()
+assert opened and opened[-1] == ("thread", inbox["id"]), opened
 win.show_bot(inbox["id"])
 pump(1.5)
 shot("01-chat-with-approval")
@@ -143,6 +172,23 @@ win.pages["settings"].tabs.setCurrentIndex(0)
 shot("11-settings-models")
 win.pages["settings"].tabs.setCurrentIndex(5)
 shot("12-settings-mobile")
+# appearance options: another accent, compact density, large text
+theme.configure("violet", "compact", "large")
+app.setStyleSheet(theme.qss())
+win3 = MainWindow(api, store, tray_available=False)
+win3.banner_shown = True
+win3.resize(1320, 840)
+win3.show()
+pump(1.0)
+win3.select("page:home")
+pump(1.2)
+win3.grab().save(str(OUT / "15-violet-compact-large-home.png"))
+win3.select("page:settings")
+win3.pages["settings"].tabs.setCurrentIndex(6)
+pump(0.8)
+win3.grab().save(str(OUT / "16-settings-app.png"))
+win3.hide()
+theme.configure("indigo", "comfortable", "default")
 # light theme
 theme.set_theme("light")
 app.setStyleSheet(theme.qss())
@@ -151,6 +197,9 @@ win2.banner_shown = True
 win2.resize(1320, 840)
 win2.show()
 pump(1.0)
+win2.select("page:home")
+pump(1.2)
+win2.grab().save(str(OUT / "17-light-home.png"))
 win2.select(f"bot:{inbox['id']}")
 pump(1.5)
 win2.grab().save(str(OUT / "13-light-chat.png"))

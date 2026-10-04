@@ -4,9 +4,10 @@ from __future__ import annotations
 import glob
 import os
 import sys
+from typing import NamedTuple
 
-from PySide6.QtCore import QEvent, QProcess, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QProcess, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QCloseEvent, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
                                QMenu, QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
@@ -15,6 +16,7 @@ from .api import Api, load_ui_config, save_ui_config
 from .chat_view import ChatPage
 from .dialogs import BotEditor, GroupDialog, NewBotDialog
 from .pages_computer import ComputerPage
+from .pages_home import HomePage
 from .pages_inbox import InboxPage
 from .pages_plugins import PluginsPage
 from .pages_routines import RoutinesPage
@@ -25,7 +27,7 @@ from .store import Store
 from .takeover import TakeoverView
 from .widgets import Avatar, ImageCache, Toasts, button, card, chip, icon_button, label, repolish
 
-NAV = [("inbox", "Inbox", "inbox"), ("computer", "Computer", "computer"), ("skills", "Skills", "skills"), ("routines", "Routines", "routines"),
+NAV = [("home", "Home", "home"), ("inbox", "Inbox", "inbox"), ("computer", "Computer", "computer"), ("skills", "Skills", "skills"), ("routines", "Routines", "routines"),
        ("plugins", "Plugins", "plugins"), ("usage", "Usage", "usage"), ("log", "Action log", "log")]
 
 
@@ -45,7 +47,7 @@ class SideRow(QFrame):
         self.setProperty("checked", False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         h = QHBoxLayout(self)
-        h.setContentsMargins(8, 6 if tall else 5, 10, 6 if tall else 5)
+        h.setContentsMargins(8, theme.dp(6 if tall else 5), 10, theme.dp(6 if tall else 5))
         h.setSpacing(10)
         self.leading = leading
         if leading is not None:
@@ -205,57 +207,197 @@ class WelcomePage(QWidget):
             st["title"].setStyleSheet(f"color: {p['muted'] if done else p['text']};")
 
 
+class Entry(NamedTuple):
+    key: str
+    name: str
+    sub: str
+    icon: str
+    group: str
+    hint: str = ""
+    emoji: str = ""
+
+
+def _score(q: str, text: str) -> int:
+    """0 = no match; higher is better. Prefix beats word-start beats substring beats loose subsequence."""
+    t = text.lower()
+    if t.startswith(q):
+        return 100
+    if f" {q}" in t:
+        return 80
+    if q in t:
+        return 60
+    it = iter(t)
+    return 30 if all(ch in it for ch in q) else 0
+
+
+def kbd(text: str) -> QLabel:
+    k = QLabel(text)
+    k.setProperty("kbd", True)
+    return k
+
+
+class PaletteRow(QWidget):
+    def __init__(self, e: Entry):
+        super().__init__()
+        p = theme.palette()
+        h = QHBoxLayout(self)
+        h.setContentsMargins(10, theme.dp(6), 10, theme.dp(6))
+        h.setSpacing(12)
+        lead = QLabel(e.emoji) if e.emoji else QLabel()
+        lead.setFixedSize(22, 22)
+        lead.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if not e.emoji:
+            lead.setPixmap(icons.pixmap(e.icon, p["muted"], 17))
+        h.addWidget(lead)
+        h.addWidget(QLabel(e.name))
+        if e.sub:
+            sub = QLabel(e.sub)
+            sub.setProperty("faint", True)
+            h.addWidget(sub)
+        h.addStretch(1)
+        for part in e.hint.split("+") if e.hint else []:
+            h.addWidget(kbd(part))
+        for w in self.findChildren(QLabel):
+            w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+
 class QuickSwitcher(QDialog):
-    """Ctrl+K: jump to any Bot, group, page or action."""
+    """Ctrl+K command palette: Bots, groups, pages and actions in sections, with shortcut hints, recents and loose matching."""
     chosen = Signal(str)
 
-    def __init__(self, entries: list[tuple[str, str, str, str]], parent=None):
+    def __init__(self, entries: list[Entry], recent: list[str] | None = None, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setModal(True)
-        self.resize(520, 420)
+        self.resize(580, 470)
         p = theme.palette()
-        self.setStyleSheet(f"QDialog {{ background: {p['panel']}; border: 1px solid {p['line2']}; border-radius: 14px; }}")
+        self.setStyleSheet(f"QDialog {{ background: {p['panel']}; border: 1px solid {p['line2']}; border-radius: 16px; }}")
         v = QVBoxLayout(self)
-        v.setContentsMargins(12, 12, 12, 12)
-        self.entries = entries
+        v.setContentsMargins(12, 12, 12, 10)
+        v.setSpacing(8)
+        self.entries, self.recent = entries, recent or []
         self.input = QLineEdit()
-        self.input.setPlaceholderText("Jump to a Bot, group or page…")
+        self.input.setPlaceholderText("Search Bots, pages and actions…")
         self.input.setProperty("search", True)
         self.input.textChanged.connect(self.filter)
         self.input.returnPressed.connect(self.accept_current)
         v.addWidget(self.input)
         self.list = QListWidget()
-        self.list.setStyleSheet("QListWidget { border: none; background: transparent; }")
+        self.list.setStyleSheet("QListWidget { border: none; background: transparent; } QListWidget::item { padding: 0px; margin: 1px 2px; }")
+        self.list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
         self.list.itemActivated.connect(lambda _: self.accept_current())
         self.list.itemClicked.connect(lambda _: self.accept_current())
         v.addWidget(self.list, 1)
+        foot = QHBoxLayout()
+        for key, text in (("↑↓", "move"), ("Enter", "open"), ("Esc", "close")):
+            foot.addWidget(kbd(key))
+            foot.addWidget(label(text, faint=True, wrap=False))
+            foot.addSpacing(8)
+        foot.addStretch(1)
+        v.addLayout(foot)
         self.filter("")
+
+    def _header(self, text: str) -> None:
+        it = QListWidgetItem(text.upper())
+        it.setFlags(Qt.ItemFlag.NoItemFlags)
+        f = it.font()
+        f.setPointSizeF(max(7.0, f.pointSizeF() - 2))
+        f.setBold(True)
+        it.setFont(f)
+        it.setForeground(QColor(theme.palette()["faint"]))
+        it.setSizeHint(QSize(0, theme.dp(30)))
+        self.list.addItem(it)
+
+    def _add(self, e: Entry) -> None:
+        it = QListWidgetItem()
+        it.setData(Qt.ItemDataRole.UserRole, e.key)
+        it.setSizeHint(QSize(0, theme.dp(40)))
+        self.list.addItem(it)
+        self.list.setItemWidget(it, PaletteRow(e))
 
     def filter(self, text: str) -> None:
         self.list.clear()
-        t = text.lower().strip()
-        for key, name, sub, icon_name in self.entries:
-            if t and t not in name.lower() and t not in sub.lower():
-                continue
-            it = QListWidgetItem(icons.icon(icon_name, theme.palette()["muted"], 16), f"{name}" + (f"   {sub}" if sub else ""))
-            it.setData(Qt.ItemDataRole.UserRole, key)
-            self.list.addItem(it)
-        if self.list.count():
-            self.list.setCurrentRow(0)
+        q = text.lower().strip()
+        if q:
+            scored = sorted(((max(_score(q, e.name), _score(q, e.sub) - 20), i, e) for i, e in enumerate(self.entries)), key=lambda t: (-t[0], t[1]))
+            hits = [e for s, _, e in scored if s > 0]
+            if hits:
+                self._header("Best matches")
+            for e in hits[:30]:
+                self._add(e)
+        else:
+            by_key = {e.key: e for e in self.entries}
+            rec = [by_key[k] for k in self.recent if k in by_key]
+            if rec:
+                self._header("Recent")
+                for e in rec:
+                    self._add(e)
+            shown = {e.key for e in rec}
+            last = ""
+            for e in self.entries:
+                if e.key in shown:
+                    continue
+                if e.group != last:
+                    self._header(e.group)
+                    last = e.group
+                self._add(e)
+        self._select(0, 1)
+
+    def _select(self, start: int, step: int) -> None:
+        i = start
+        while 0 <= i < self.list.count():
+            if self.list.item(i).flags() & Qt.ItemFlag.ItemIsSelectable:
+                self.list.setCurrentRow(i)
+                return
+            i += step
 
     def keyPressEvent(self, e) -> None:
         if e.key() in (Qt.Key.Key_Down, Qt.Key.Key_Up):
-            r = self.list.currentRow() + (1 if e.key() == Qt.Key.Key_Down else -1)
-            self.list.setCurrentRow(max(0, min(self.list.count() - 1, r)))
+            step = 1 if e.key() == Qt.Key.Key_Down else -1
+            self._select(self.list.currentRow() + step, step)
             return
         super().keyPressEvent(e)
 
     def accept_current(self) -> None:
         it = self.list.currentItem()
-        if it:
+        if it and it.data(Qt.ItemDataRole.UserRole):
             self.chosen.emit(it.data(Qt.ItemDataRole.UserRole))
-        self.accept()
+            self.accept()
+
+
+SHORTCUTS = [
+    ("Navigation", [("Ctrl+K", "Command palette: search Bots, pages and actions"), ("Ctrl+0", "Home"), ("Ctrl+1 … 9", "Jump to the 1st … 9th Bot"),
+                    ("Ctrl+,", "Settings"), ("Ctrl+/", "This list")]),
+    ("Create", [("Ctrl+N", "New Bot")]),
+    ("In a chat", [("Enter", "Send"), ("Shift+Enter", "New line"), ("/", "Slash commands (type / to see them)"), ("Tab", "Complete the highlighted command"),
+                   ("Esc", "Close the command list")]),
+]
+
+
+class ShortcutsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Keyboard shortcuts")
+        self.setMinimumWidth(500)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(24, 22, 24, 20)
+        v.setSpacing(8)
+        v.addWidget(label("Keyboard shortcuts", h1=True))
+        for title, rows in SHORTCUTS:
+            head = label(title.upper(), eyebrow=True)
+            head.setContentsMargins(0, 10, 0, 0)
+            v.addWidget(head)
+            for keys, what in rows:
+                r = QHBoxLayout()
+                r.addWidget(label(what, wrap=False), 1)
+                for part in keys.split("+"):
+                    r.addWidget(kbd(part.strip()))
+                v.addLayout(r)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(button("Close", primary=True, on=self.accept))
+        v.addSpacing(8)
+        v.addLayout(row)
 
 
 class MainWindow(QMainWindow):
@@ -296,7 +438,7 @@ class MainWindow(QMainWindow):
         self.welcome.openSettings.connect(lambda: self.select("page:settings"))
         self.chat = ChatPage(api, store, self.images)
         self.pages: dict[str, QWidget] = {
-            "inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "skills": SkillsPage(api, store), "routines": RoutinesPage(api, store),
+            "home": HomePage(api, store), "inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "skills": SkillsPage(api, store), "routines": RoutinesPage(api, store),
             "plugins": PluginsPage(api, store), "usage": UsagePage(api, store), "log": LogPage(api, store), "settings": SettingsPage(api, store),
         }
         for w in (self.welcome, self.chat, *self.pages.values()):
@@ -307,6 +449,11 @@ class MainWindow(QMainWindow):
         self.chat.editGroup.connect(self.edit_group)
         self.chat.exportBot.connect(self.export_bot)
         self.chat.toast.connect(self.toast)
+        home: HomePage = self.pages["home"]  # type: ignore[assignment]
+        home.openBot.connect(self.show_bot)
+        home.openThread.connect(self.open_thread)
+        home.openPage.connect(self.show_page)
+        home.newBot.connect(self.new_bot)
         self.pages["inbox"].openBrowser.connect(self.open_takeover)  # type: ignore[attr-defined]
         self.pages["inbox"].openThread.connect(self.open_thread)  # type: ignore[attr-defined]
         self.pages["computer"].takeOver.connect(lambda bid, follow: self.open_takeover(bid, follow))  # type: ignore[attr-defined]
@@ -334,6 +481,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.quick_switch)
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self.new_bot)
         QShortcut(QKeySequence("Ctrl+,"), self, activated=lambda: self.select("page:settings"))
+        QShortcut(QKeySequence("Ctrl+/"), self, activated=self.show_shortcuts)
+        QShortcut(QKeySequence("Ctrl+0"), self, activated=lambda: self.select("page:home"))
+        for n in range(1, 10):
+            QShortcut(QKeySequence(f"Ctrl+{n}"), self, activated=lambda n=n: self.jump_to_bot(n - 1))
 
         self.tray: QSystemTrayIcon | None = None
         if tray_available and QSystemTrayIcon.isSystemTrayAvailable():
@@ -532,7 +683,7 @@ class MainWindow(QMainWindow):
         if not self.store.bots:
             self.show_welcome()
         else:
-            self.show_bot(self.store.bots[0]["id"])
+            self.select("page:home")
 
     def open_thread(self, thread_id: str, bot_id: str = "") -> None:
         g = self.store.group_by_thread(thread_id)
@@ -547,33 +698,60 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def quick_switch(self) -> None:
-        entries: list[tuple[str, str, str, str]] = []
-        for b in self.store.bots:
-            entries.append((f"bot:{b['id']}", f"{b['emoji']}  {b['name']}", "Bot", "bot"))
+    def jump_to_bot(self, i: int) -> None:
+        if i < len(self.store.bots):
+            self.select(f"bot:{self.store.bots[i]['id']}")
+
+    def palette_entries(self) -> list[Entry]:
+        out: list[Entry] = []
+        for i, b in enumerate(self.store.bots):
+            kind, text = self.store.state_of(b["id"])
+            sub = {"idle": "Bot", "work": f"Bot  ·  {text}", "wait": "Bot  ·  needs you", "takeover": "Bot  ·  you are driving"}[kind]
+            out.append(Entry(f"bot:{b['id']}", b["name"], sub, "bot", "Bots", f"Ctrl+{i + 1}" if i < 9 else "", b.get("emoji") or ""))
         for g in self.store.groups:
-            entries.append((f"group:{g['id']}", g["name"], "Group chat", "users"))
+            out.append(Entry(f"group:{g['id']}", g["name"], "Group chat", "users", "Groups"))
         for key, text, ic in NAV:
-            entries.append((f"page:{key}", text, "Page", ic))
-        entries.append(("page:settings", "Settings", "Page", "settings"))
-        entries.append(("action:new", "New Bot…", "Action", "plus"))
-        entries.append(("action:group", "New group chat…", "Action", "users"))
-        entries.append(("action:import", "Import a Bot package…", "Action", "download"))
-        d = QuickSwitcher(entries, self)
+            out.append(Entry(f"page:{key}", text, "Page", ic, "Pages", "Ctrl+0" if key == "home" else ""))
+        out.append(Entry("page:settings", "Settings", "Page", "settings", "Pages", "Ctrl+,"))
+        out.append(Entry("action:new", "New Bot…", "", "plus", "Actions", "Ctrl+N"))
+        out.append(Entry("action:group", "New group chat…", "", "users", "Actions"))
+        out.append(Entry("action:import", "Import a Bot package…", "", "download", "Actions"))
+        out.append(Entry("action:theme", "Switch to light theme" if theme.theme_name() == "dark" else "Switch to dark theme", "", "moon", "Actions"))
+        if self.store.busy:
+            out.append(Entry("action:stopall", f"Stop all running tasks ({len(self.store.busy)})", "", "stop", "Actions"))
+        out.append(Entry("action:keys", "Keyboard shortcuts", "", "keyboard", "Actions", "Ctrl+/"))
+        return out
+
+    def quick_switch(self) -> None:
+        d = QuickSwitcher(self.palette_entries(), load_ui_config().get("recent", []), self)
         d.chosen.connect(self._quick_chosen)
         g = self.geometry()
         d.move(g.x() + (g.width() - d.width()) // 2, g.y() + 90)
         d.exec()
 
     def _quick_chosen(self, key: str) -> None:
+        cfg = load_ui_config()
+        cfg["recent"] = ([key] + [k for k in cfg.get("recent", []) if k != key])[:5]
+        save_ui_config(cfg)
         if key == "action:new":
             self.new_bot()
         elif key == "action:group":
             self.new_group()
         elif key == "action:import":
             self.import_bot()
+        elif key == "action:theme":
+            t = "light" if theme.theme_name() == "dark" else "dark"
+            self.api.put("/api/settings", {"theme": t}, lambda s: (setattr(self.store, "settings", s), self.themeRequested.emit(t)))
+        elif key == "action:stopall":
+            self.stop_all()
+            self.toast("Asked every running Bot to stop.")
+        elif key == "action:keys":
+            self.show_shortcuts()
         else:
             self.select(key)
+
+    def show_shortcuts(self) -> None:
+        ShortcutsDialog(self).exec()
 
     # ------------------------------------------------------------------- actions
     def toast(self, text: str, kind: str = "info") -> None:

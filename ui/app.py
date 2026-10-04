@@ -118,7 +118,7 @@ class Controller(QObject):
         self.store.apply_bootstrap(d)
         self.store.connected = True
         theme_name = d["settings"].get("theme", "dark")
-        if theme_name != "dark":
+        if theme_name != theme.theme_name():
             theme.set_theme(theme_name)
             self.app.setStyleSheet(theme.qss())
         if self.window is None:
@@ -137,9 +137,11 @@ class Controller(QObject):
 
     def on_theme(self, name: str) -> None:
         """Switch theme live by rebuilding the window (every widget picks up the new palette)."""
+        cfg = load_ui_config()
+        theme.configure(cfg.get("accent"), cfg.get("density"), cfg.get("text"))
         theme.set_theme(name)
         self.app.setStyleSheet(theme.qss())
-        save_ui_config({**load_ui_config(), "theme": name})
+        save_ui_config({**cfg, "theme": name})
         old = self.window
         geo = old.geometry() if old else None
         self.window = self._make_window()
@@ -147,7 +149,7 @@ class Controller(QObject):
             self.window.setGeometry(geo)
         self.window.start_page()
         self.window.show_window()
-        self.window.select("page:settings")
+        self.window.select(old.current_key if old and old.current_key else "page:settings")
         if old:
             old.really_quit = True
             old.hide()
@@ -179,6 +181,7 @@ def run_ui(start_hidden: bool = False) -> int:
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(theme.app_icon())
     cfg = load_ui_config()
+    theme.configure(cfg.get("accent"), cfg.get("density"), cfg.get("text"))
     theme.set_theme(cfg.get("theme", "dark"))
     app.setStyleSheet(theme.qss())
 
