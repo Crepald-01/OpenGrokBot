@@ -11,3 +11,7 @@ dist/
 assets/icon.ico
 admin.json
 service_token.txt
+
+# local debugging output
+phone-watch.log
+*.bundle
