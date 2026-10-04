@@ -280,3 +280,6 @@ footer small { display: block; max-width: 520px; margin-top: 10px; line-height: 
   .btn.lg { width: 100%; }
   .cta { flex-direction: column; align-items: stretch; }
 }
+
+footer .visits { margin: 0; width: 100%; font-size: 13px; color: var(--faint); }
+footer .visits b { color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -124,3 +124,17 @@ $$("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
   label.textContent = "Copied";
   setTimeout(() => (label.textContent = old), 1400);
 }));
+
+// ---- Visitor counter ------------------------------------------------------------------------------------
+// Anonymous, cookie-free: counts one visit per browser per day on abacus.jasoncameron.dev (no account needed).
+// Only a number is stored; no IP, no identifiers. If the service is down the footer simply shows nothing.
+(function visitorCounter() {
+  const NS = "opengrokbot-site", KEY = "visits", today = new Date().toISOString().slice(0, 10);
+  const show = (n) => { const el = $("#visits"); if (el && Number.isFinite(n)) { $("#visits-n").textContent = n.toLocaleString(); el.hidden = false; } };
+  let counted = false;
+  safe(() => { counted = localStorage.getItem("ogb-visit") === today; });
+  fetch(`https://abacus.jasoncameron.dev/${counted ? "get" : "hit"}/${NS}/${KEY}`)
+    .then((r) => r.json())
+    .then((d) => { show(d.value); if (!counted) safe(() => localStorage.setItem("ogb-visit", today)); })
+    .catch(() => {});
+})();
