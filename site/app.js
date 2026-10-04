@@ -14,7 +14,7 @@ const CONFIG = {
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const placeholder = CONFIG.REPO.startsWith("Crepald-01");
+const placeholder = CONFIG.REPO.startsWith("YOUR-USER");
 const repoUrl = "https://github.com/" + CONFIG.REPO;
 const safe = (fn) => { try { return fn(); } catch (e) { return null; } };
 
