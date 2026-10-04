@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import base64
+import html
 import os
+import re
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent, QPixmap
@@ -205,6 +207,78 @@ class MessageList(QScrollArea):
         QTimer.singleShot(30, lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()))
 
 
+class CommandPopup(QListWidget):
+    """The list of slash commands that appears above the composer while you type "/"."""
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setMouseTracking(True)
+        self.commands: list[dict] = []
+        self.picked = None            # callback(name)
+        self.itemClicked.connect(lambda it: self.picked and self.picked(it.data(Qt.ItemDataRole.UserRole)))
+        self.hide()
+
+    def update_for(self, text: str, in_group: bool) -> None:
+        m = re.match(r"^/([\w-]*)$", text)
+        if not m or not self.commands:
+            self.hide()
+            return
+        q = m.group(1).lower()
+        scored = []
+        for c in self.commands:
+            if in_group and c["bot_only"]:
+                continue
+            names = [c["name"], *c["aliases"]]
+            if any(n.startswith(q) for n in names):
+                scored.append((0, c))
+            elif q and any(q in n for n in names):
+                scored.append((1, c))
+        rows = [c for _, c in sorted(scored, key=lambda t: t[0])]
+        if not rows:
+            self.hide()
+            return
+        p = theme.palette()
+        self.setStyleSheet(f"QListWidget {{ background: {p['panel2']}; border: 1px solid {p['line2']}; border-radius: 12px; padding: 4px; outline: 0; }}"
+                           f"QListWidget::item {{ border-radius: 8px; }} QListWidget::item:selected {{ background: {p['select']}; }}")
+        self.clear()
+        for c in rows[:8]:
+            it = QListWidgetItem()
+            it.setData(Qt.ItemDataRole.UserRole, c["name"])
+            it.setSizeHint(QSize(0, 34))
+            self.addItem(it)
+            lb = QLabel(f"<b>{html.escape(c['usage'])}</b>  <span style='color:{p['muted']}'>{html.escape(c['summary'])}</span>")
+            lb.setStyleSheet("background: transparent; padding: 0 8px;")
+            lb.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            self.setItemWidget(it, lb)
+        self.setCurrentRow(0)
+        self.setFixedHeight(min(len(rows), 8) * 34 + 14)
+        self.show()
+        self.raise_()
+
+    def step(self, d: int) -> None:
+        n = self.count()
+        if n:
+            self.setCurrentRow((self.currentRow() + d) % n)
+
+    def accept_into(self, comp: QPlainTextEdit, enter: bool) -> bool:
+        """Complete the highlighted command into the composer. False means "send it as typed"."""
+        it = self.currentItem()
+        if it is None:
+            return False
+        name = it.data(Qt.ItemDataRole.UserRole)
+        if enter and comp.toPlainText().strip() == f"/{name}":
+            return False
+        comp.setPlainText(f"/{name} ")
+        cur = comp.textCursor()
+        cur.movePosition(cur.MoveOperation.End)
+        comp.setTextCursor(cur)
+        self.hide()
+        return True
+
+
 class Composer(QPlainTextEdit):
     send = Signal()
     focusChanged = Signal(bool)
@@ -212,7 +286,8 @@ class Composer(QPlainTextEdit):
     def __init__(self):
         super().__init__()
         self.setProperty("bare", True)
-        self.setPlaceholderText("Message your Bot…")
+        self.setPlaceholderText("Message your Bot…   (type / for commands)")
+        self.popup: CommandPopup | None = None
         self.setTabChangesFocus(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.document().contentsChanged.connect(self._grow)
@@ -224,10 +299,33 @@ class Composer(QPlainTextEdit):
         self.setFixedHeight(max(36, min(h, 150)))
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
+        pop = self.popup
+        if pop is not None and pop.isVisible():
+            k = e.key()
+            if k == Qt.Key.Key_Down:
+                pop.step(1)
+                return
+            if k == Qt.Key.Key_Up:
+                pop.step(-1)
+                return
+            if k == Qt.Key.Key_Escape:
+                pop.hide()
+                return
+            if k in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Tab) and not (e.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                if pop.accept_into(self, enter=k != Qt.Key.Key_Tab) or k == Qt.Key.Key_Tab:
+                    return
         if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (e.modifiers() & Qt.KeyboardModifier.ShiftModifier):
             self.send.emit()
             return
         super().keyPressEvent(e)
+
+    def focusNextPrevChild(self, nxt: bool) -> bool:
+        # Tab would normally move focus; while the command list is open it completes the highlighted command instead
+        pop = self.popup
+        if pop is not None and pop.isVisible():
+            pop.accept_into(self, enter=False)
+            return True
+        return super().focusNextPrevChild(nxt)
 
     def focusInEvent(self, e) -> None:
         super().focusInEvent(e)
@@ -459,6 +557,13 @@ class ChatPage(QWidget):
         self.input.send.connect(self.send)
         self.input.focusChanged.connect(self._focus_ring)
         self.input.textChanged.connect(lambda: self._sync_buttons())
+        self.popup = CommandPopup(self)
+        self.popup.picked = self._pick_command
+        self.input.popup = self.popup
+        self.input.textChanged.connect(self._slash_update)
+        self.input.focusChanged.connect(lambda on: None if on else self.popup.hide())
+        self.commands: list[dict] = []
+        self.api.get("/api/commands", self._set_commands)
         row.addWidget(self.input, 1)
         self.btn_send = icon_button("send", "Send (Enter)", self.send, kind="accent")
         self.btn_stop = icon_button("stop", "Stop this Bot", self.stop, kind="danger")
@@ -466,7 +571,7 @@ class ChatPage(QWidget):
         row.addWidget(self.btn_send, 0, Qt.AlignmentFlag.AlignBottom)
         row.addWidget(self.btn_stop, 0, Qt.AlignmentFlag.AlignBottom)
         iv.addWidget(self.comp_frame)
-        hint = label("Enter to send  ·  Shift+Enter for a new line  ·  Bots ask before anything consequential", faint=True, wrap=False)
+        hint = label("Enter to send  ·  Shift+Enter for a new line  ·  / for commands  ·  Bots ask before anything consequential", faint=True, wrap=False)
         hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         iv.addWidget(hint)
         cw.addWidget(inner, 100)
@@ -489,6 +594,25 @@ class ChatPage(QWidget):
     def _focus_ring(self, on: bool) -> None:
         p = theme.palette()
         self.comp_frame.setStyleSheet(f"QFrame#composer {{ background: {p['panel']}; border: 1px solid {p['accent'] if on else p['line2']}; border-radius: 18px; }}")
+
+    def _set_commands(self, rows: list) -> None:
+        self.commands = rows
+        self.popup.commands = rows
+
+    def _slash_update(self) -> None:
+        self.popup.update_for(self.input.toPlainText(), bool(self.group_id))
+        if self.popup.isVisible():
+            top = self.comp_frame.mapTo(self, self.comp_frame.rect().topLeft())
+            self.popup.setFixedWidth(self.comp_frame.width())
+            self.popup.move(top.x(), top.y() - self.popup.height() - 6)
+
+    def _pick_command(self, name: str) -> None:
+        self.input.setPlainText(f"/{name} ")
+        cur = self.input.textCursor()
+        cur.movePosition(cur.MoveOperation.End)
+        self.input.setTextCursor(cur)
+        self.input.setFocus()
+        self.popup.hide()
 
     def _use_suggestion(self, text: str) -> None:
         self.input.setPlainText(text)
@@ -669,6 +793,15 @@ class ChatPage(QWidget):
             if it["id"] in self._assistant_ids():
                 return
             self._plain(self._assistant_bubble(it["text"], it.get("name", ""), it.get("emoji", ""), it["id"]))
+        elif t == "notice" and it.get("level") == "cmd":
+            card = QFrame()
+            card.setStyleSheet(f"QFrame {{ background: {p['panel']}; border: 1px solid {p['line2']}; border-left: 3px solid {p['accent']}; border-radius: 10px; }}")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(14, 8, 14, 10)
+            md = AutoMarkdown(it["text"])
+            md.setStyleSheet("border: none; background: transparent;")
+            cl.addWidget(md)
+            self._plain(card)
         elif t == "notice":
             lb = QLabel(it["text"])
             lb.setWordWrap(True)
@@ -810,7 +943,10 @@ class ChatPage(QWidget):
         self.attachments = []
         clear_layout(self.attach_row)
         self.list.to_bottom()
-        self.api.post(f"/api/threads/{self.thread_id}/messages", body, None, lambda e: self.toast.emit(e, "error"))
+        def sent(d: dict) -> None:
+            if isinstance(d, dict) and d.get("switch_thread") and self.bot_id:
+                self._load_threads(d["switch_thread"])
+        self.api.post(f"/api/threads/{self.thread_id}/messages", body, sent, lambda e: self.toast.emit(e, "error"))
 
     def attach(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Attach an image", "", "Images (*.png *.jpg *.jpeg)")

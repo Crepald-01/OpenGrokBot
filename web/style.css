@@ -57,6 +57,12 @@ h3.section { margin: 18px 4px 8px; font-size: 13px; text-transform: uppercase; l
 .tool img { display: block; max-width: 220px; border-radius: 8px; margin-top: 4px; border: 1px solid var(--line); }
 .notice { align-self: center; font-size: 13px; color: var(--muted); background: var(--panel); border-radius: 10px; padding: 6px 12px; text-align: center; }
 .notice.warn { color: var(--warn); } .notice.error { color: var(--bad); }
+.notice.cmd { align-self: stretch; text-align: left; font-size: 14px; color: var(--text); border-left: 3px solid var(--accent); border-radius: 8px; padding: 8px 12px; }
+.notice.cmd p { margin: 2px 0; } .notice.cmd ul, .notice.cmd ol { margin: 4px 0; padding-left: 20px; }
+#cmdlist { margin: 0 12px 6px; background: var(--panel2, var(--panel)); border: 1px solid var(--line); border-radius: 12px; overflow: auto; max-height: 38vh; }
+#cmdlist button { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--text); padding: 10px 12px; font: inherit; font-size: 14px; }
+#cmdlist button:last-child { border-bottom: 0; } #cmdlist button:active, #cmdlist button.sel { background: var(--accent-soft, rgba(124,156,255,.15)); }
+#cmdlist b { display: block; } #cmdlist span { color: var(--muted); font-size: 13px; }
 .chat-status { padding: 6px 14px; font-size: 13px; color: var(--accent); background: #141a2b; border-bottom: 1px solid var(--line); }
 #composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); align-items: flex-end; background: var(--bg); }
 #chat-approvals { padding: 0 12px; }

@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from core import VERSION, packages, paths, secrets, skills as skills_mod
+from core import VERSION, commands, packages, paths, secrets, skills as skills_mod
 from core.browser import BrowserError
 from core.bots import BotError
 from core.computer import ComputerError
@@ -247,6 +247,10 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             p.write_bytes(raw)
             paths_.append(str(p))
         return eng.send_user_message(tid, body.get("text", ""), paths_)
+
+    @app.get("/api/commands", dependencies=[api])
+    def commands_list() -> list[dict]:
+        return commands.listing()
 
     @app.post("/api/threads/{tid}/stop", dependencies=[api])
     def thread_stop(tid: str) -> dict:

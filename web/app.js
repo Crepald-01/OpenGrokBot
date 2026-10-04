@@ -3,7 +3,7 @@
   'use strict';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const S = { bots: [], groups: [], busy: {}, approvals: [], thread: null, items: [], stream: {}, view: 'bots', es: null, lastEvent: 0, screenBot: null, screenTimer: null, titleBase: document.title };
+  const S = { commands: [], bots: [], groups: [], busy: {}, approvals: [], thread: null, items: [], stream: {}, view: 'bots', es: null, lastEvent: 0, screenBot: null, screenTimer: null, titleBase: document.title };
 
   // ------------------------------------------------------------------ api
   async function api(path, opts = {}) {
@@ -90,7 +90,7 @@
       const ic = { running: '●', ok: '✓', error: '✕', denied: '⛔', blocked: '⛔' }[it.status] || '•';
       return `<div class="tool ${it.status}"><span class="ic">${ic}</span><span>${esc(it.label || it.tool)}${(it.images || []).map((i) => `<img src="/api/files/shots/${encodeURIComponent(i)}">`).join('')}</span></div>`;
     }
-    if (it.type === 'notice') return `<div class="notice ${esc(it.level)}">${esc(it.text)}</div>`;
+    if (it.type === 'notice') return it.level === 'cmd' ? `<div class="notice cmd">${md(it.text)}</div>` : `<div class="notice ${esc(it.level)}">${esc(it.text)}</div>`;
     if (it.type === 'system_note') return `<div class="notice">${esc(it.text.slice(0, 200))}</div>`;
     return '';
   }
@@ -246,14 +246,34 @@
     S.lastEvent = Math.max(S.lastEvent, d.last_event || 0);
     updateBadge(); if (S.view === 'bots') renderBots();
     $('#login').hidden = true; $('#app').hidden = false;
+    api('/api/commands').then((c) => { S.commands = c; }).catch(() => {});
   }
 
   // ------------------------------------------------------------------ chat
   async function send() {
     const ta = $('#input'); const text = ta.value.trim();
     if (!text || !S.thread) return;
-    ta.value = ''; autoGrow();
-    try { await api('/api/threads/' + S.thread.id + '/messages', { body: { text } }); } catch (e) { toast('Could not send', e.message); ta.value = text; }
+    ta.value = ''; autoGrow(); showCommands();
+    try {
+      const d = await api('/api/threads/' + S.thread.id + '/messages', { body: { text } });
+      if (d.switch_thread && S.thread && S.thread.botId) openThread(d.switch_thread, S.thread.title, S.thread.botId);   // /new
+    } catch (e) { toast('Could not send', e.message); ta.value = text; }
+  }
+
+  // ----------------------------------------------------------- slash commands
+  function showCommands() {
+    const box = $('#cmdlist'); const ta = $('#input');
+    const m = /^\/([\w-]*)$/.exec(ta.value);
+    if (!m || !S.commands.length) { box.hidden = true; return; }
+    const q = m[1].toLowerCase(); const inGroup = !(S.thread && S.thread.botId);
+    const rows = S.commands.filter((c) => !(inGroup && c.bot_only)).map((c) => {
+      const names = [c.name, ...c.aliases];
+      return [names.some((n) => n.startsWith(q)) ? 0 : (q && names.some((n) => n.includes(q)) ? 1 : 2), c];
+    }).filter((r) => r[0] < 2).sort((a, b) => a[0] - b[0]).map((r) => r[1]).slice(0, 8);
+    if (!rows.length) { box.hidden = true; return; }
+    box.innerHTML = rows.map((c, i) => `<button type="button" data-cmd="${esc(c.name)}" class="${i === 0 ? 'sel' : ''}"><b>${esc(c.usage)}</b><span>${esc(c.summary)}</span></button>`).join('');
+    box.hidden = false;
+    box.querySelectorAll('button').forEach((b) => b.onclick = () => { ta.value = '/' + b.dataset.cmd + ' '; box.hidden = true; ta.focus(); autoGrow(); });
   }
   function autoGrow() { const ta = $('#input'); ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + 'px'; }
 
@@ -282,7 +302,8 @@
     document.querySelectorAll('#tabs button').forEach((b) => b.onclick = () => setView(b.dataset.view));
     $('#back').onclick = () => { S.thread = null; setView('bots'); };
     $('#composer').onsubmit = (e) => { e.preventDefault(); send(); };
-    $('#input').addEventListener('input', autoGrow);
+    $('#input').addEventListener('input', () => { autoGrow(); showCommands(); });
+    $('#input').addEventListener('keydown', (e) => { const b = $('#cmdlist'); if (e.key === 'Tab' && !b.hidden) { e.preventDefault(); b.querySelector('button').click(); } if (e.key === 'Escape') b.hidden = true; });
     $('#stop').onclick = () => S.thread && api('/api/threads/' + S.thread.id + '/stop', { body: {} });
     $('#scr-done').onclick = () => closeScreen(true);
     $('#scr-back').onclick = () => closeScreen(false);

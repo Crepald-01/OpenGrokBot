@@ -122,6 +122,23 @@ Setup: **Settings > Models > OpenRouter**, paste your key, press **Test**, then 
 
 **Caveats.** Free models are slower, are sometimes rate-limited at busy times, and are weaker than paid models on long multi-step jobs. Free endpoints may let the provider log your prompts, so do not use them with private email or documents. The free list changes often: the model dropdown always shows what your provider offers today. For reliable day-to-day use, a cheap paid model costs very little per task.
 
+## Slash commands
+
+Type `/` in a chat (desktop or phone) to see the commands. They run in the background service, are never sent to the model, and answer right in the conversation. Start a message with `//` to send text that really begins with a slash.
+
+| Command | What it does |
+|---|---|
+| `/status` | This Bot's state, model, approvals and usage |
+| `/model [name \| default]` | Show or change the Bot's model |
+| `/mode ask \| auto` | Ask for every consequential action, or let Auto Review handle the low-risk ones |
+| `/approvals`, `/approve [n \| all]`, `/deny [n \| all]` | Handle waiting approvals from the keyboard or your phone. `/approve all` never bulk-approves purchases, logins, new connectors or anything outside the workspace |
+| `/memory [search]`, `/remember <text>`, `/forget <#id>` | See, add and remove what the Bot remembers |
+| `/skills`, `/skill <name> [notes]` | List skills and run one now |
+| `/routines` | Scheduled routines and their next run |
+| `/new [title]`, `/rename <title>` | Start a new thread, or rename this one |
+| `/stop`, `/pause`, `/resume` | Control the Bot |
+| `/usage`, `/version`, `/help` | Info |
+
 ## A good first task
 
 Give the task, the context, and the finish line. For an **Inbox** Bot:
@@ -147,7 +164,7 @@ The Bot asks for Gmail access (you approve), works through the mailbox with a li
 
 The full guide is in **[docs/GUIDE.md](docs/GUIDE.md)**:
 
-[Recommended models](#recommended-models) · [Install](docs/GUIDE.md#install) · [Creating Bots](docs/GUIDE.md#create-your-first-bot) · [How it works](docs/GUIDE.md#how-it-works) · [Skills](docs/GUIDE.md#writing-skills) · [Routines](docs/GUIDE.md#routines) · [Plugins and MCP](docs/GUIDE.md#adding-plugins-and-mcp-servers) · [Approvals and security](docs/GUIDE.md#approval-and-security-model) · [Remote mode](docs/GUIDE.md#remote-mode-setup) · [Mobile app](docs/GUIDE.md#mobile-app) · [Admin policy](docs/GUIDE.md#administration-presets)
+[Recommended models](#recommended-models) · [Slash commands](#slash-commands) · [Install](docs/GUIDE.md#install) · [Creating Bots](docs/GUIDE.md#create-your-first-bot) · [How it works](docs/GUIDE.md#how-it-works) · [Skills](docs/GUIDE.md#writing-skills) · [Routines](docs/GUIDE.md#routines) · [Plugins and MCP](docs/GUIDE.md#adding-plugins-and-mcp-servers) · [Approvals and security](docs/GUIDE.md#approval-and-security-model) · [Remote mode](docs/GUIDE.md#remote-mode-setup) · [Mobile app](docs/GUIDE.md#mobile-app) · [Admin policy](docs/GUIDE.md#administration-presets)
 
 ## Download site
 

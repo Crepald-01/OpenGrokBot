@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Any
 
-from . import VERSION, notify as notifier, paths
+from . import VERSION, commands, notify as notifier, paths
 from .actionlog import ActionLog
 from .agent import AgentRun, TurnManager, run_reflection
 from .approvals import ApprovalManager
@@ -175,6 +175,14 @@ class Engine:
         th = self.threads.get(thread_id)
         if not th:
             raise ValueError("No such thread.")
+        if text.lstrip().startswith("//"):
+            text = text.lstrip()[1:]          # "//text" sends a message that really starts with a slash
+        elif not image_paths:
+            res = commands.run(self, thread_id, text)   # "/status", "/approve"...: handled here, not sent to the model
+            if res is not None:
+                if not res.get("send"):
+                    return {"started": [], **{k: v for k, v in res.items() if k != "send"}}
+                text = res["send"]
         blocks: list[dict] = [{"type": "text", "text": text}] if text.strip() else []
         for p in image_paths or []:
             blocks.append({"type": "image", "path": p, "media_type": "image/jpeg" if p.lower().endswith((".jpg", ".jpeg")) else "image/png"})

@@ -39,8 +39,9 @@
     <div id="chat-status" class="chat-status" hidden></div>
     <div id="messages"></div>
     <div id="chat-approvals"></div>
+    <div id="cmdlist" role="listbox" aria-label="Commands" hidden></div>
     <form id="composer">
-      <textarea id="input" rows="1" placeholder="Message…" enterkeyhint="send"></textarea>
+      <textarea id="input" rows="1" placeholder="Message… (/ for commands)" enterkeyhint="send"></textarea>
       <button id="stop" type="button" class="stop" hidden>Stop</button>
       <button id="send" type="submit" class="primary">Send</button>
     </form>
