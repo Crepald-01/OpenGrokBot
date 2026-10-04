@@ -1,6 +1,6 @@
 """Uploads (or replaces) the installer on a GitHub release using the credential Git already has.
 
-    python scripts/publish_release_asset.py dist/OpenGrokBot-Setup-1.0.0.exe v1.0.0
+    python scripts/publish_release_asset.py dist/OpenGrokBot-Setup-1.1.0.exe v1.1.0
 
 The token is read from `git credential fill` and never printed.
 """
@@ -36,7 +36,22 @@ def call(method: str, url: str, data=None, headers=None, raw=False):
         sys.exit(f"{method} {url} -> HTTP {e.code}: {e.read().decode()[:300]}")
 
 
-rel = call("GET", f"https://api.github.com/repos/{REPO}/releases/tags/{tag}")
+def notes() -> str:
+    """The CHANGELOG.md section for this version, plus the install hint."""
+    ver = tag.lstrip("v")
+    text = (Path(__file__).resolve().parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    sect = text.split(f"## {ver}", 1)[1].split("\n## ", 1)[0].strip() if f"## {ver}" in text else ""
+    return (sect + "\n\n" if sect else "") + (
+        f"**Install:** download `{exe.name}` below and run it (per user, no admin needed). Upgrading keeps your Bots and settings.\n\n"
+        "The installer is not code-signed, so Windows SmartScreen may warn: choose *More info*, then *Run anyway*, or check the SHA-256 shown next to the file.")
+
+
+try:
+    rel = call("GET", f"https://api.github.com/repos/{REPO}/releases/tags/{tag}")
+except SystemExit:
+    rel = call("POST", f"https://api.github.com/repos/{REPO}/releases",
+               {"tag_name": tag, "target_commitish": "main", "name": f"OpenGrokBot {tag.lstrip('v')}", "body": notes(), "draft": False, "prerelease": False})
+    print("created release", rel["html_url"])
 for a in rel.get("assets", []):
     if a["name"] == exe.name:
         call("DELETE", a["url"])
