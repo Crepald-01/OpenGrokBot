@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import sys
 
-from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMessageBox, QPlainTextEdit, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
@@ -493,7 +493,32 @@ class SettingsPage(QWidget):
 
     def apply_mobile(self) -> None:
         body = {"mobile.host": "0.0.0.0" if self.m_lan.isChecked() else "127.0.0.1", "mobile.port": self.m_port.value()}
-        self.api.put("/api/settings", body, lambda s: (self.m_msg.setText("Restarting the service…"), self.restartService.emit()))
+        want_lan = self.m_lan.isChecked()
+
+        def saved(_s: object) -> None:
+            self.m_msg.setText("Restarting the service…")
+            self.restartService.emit()
+            QTimer.singleShot(1500, lambda: self._mobile_wait(want_lan, 0))
+        self.api.put("/api/settings", body, saved)
+
+    def _mobile_wait(self, want_lan: bool, tries: int) -> None:
+        """Poll until the restarted service answers with the new settings, then refresh the link and QR code."""
+        def ok(d: dict) -> None:
+            if bool(d.get("lan")) != want_lan:   # still the old process
+                retry()
+                return
+            self.load_mobile()
+            if want_lan:
+                self.m_msg.setText("Ready. On your phone (same Wi-Fi) open the link above. If it does not load: check the phone is not on mobile data or a guest network, and allow OpenGrokBot through Windows Firewall for Private and Public networks.")
+            else:
+                self.m_msg.setText("Phone access is off. The service now listens on this PC only.")
+
+        def retry(_e: str = "") -> None:
+            if tries < 25:
+                QTimer.singleShot(1500, lambda: self._mobile_wait(want_lan, tries + 1))
+            else:
+                self.m_msg.setText("The service did not come back. Use Settings > Computer > Restart local service.")
+        self.api.get("/api/mobile", ok, retry)
 
     # ================================================================== app
     def _build_app(self) -> None:

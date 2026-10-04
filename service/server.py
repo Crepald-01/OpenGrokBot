@@ -45,7 +45,9 @@ def lan_addresses() -> list[str]:
         s.connect(("10.255.255.255", 1))
         ip = s.getsockname()[0]
         s.close()
-        if ip not in out:
+        if not ip.startswith("127."):
+            if ip in out:   # the address Windows uses to reach the network (Wi-Fi/LAN) must come first: it is the one phones can reach
+                out.remove(ip)
             out.insert(0, ip)
     except OSError:
         pass
