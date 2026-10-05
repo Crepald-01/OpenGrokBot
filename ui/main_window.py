@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 from PySide6.QtCore import QEvent, QProcess, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
                                QMenu, QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from core import quiet
@@ -18,18 +18,20 @@ from .api import Api, load_ui_config, save_ui_config
 from .chat_view import ChatPage
 from .dialogs import BotEditor, GroupDialog, NewBotDialog
 from .pages_computer import ComputerPage
-from .pages_home import HomePage
+from .pages_files import FilesPage
+from .pages_home import DigestDialog, HomePage
 from .pages_inbox import InboxPage
 from .pages_plugins import PluginsPage
 from .pages_routines import RoutinesPage
 from .pages_settings import SettingsPage
 from .pages_skills import SkillsPage
 from .pages_usage_log import LogPage, UsagePage
+from .quick_ask import QuickAsk
 from .store import Store
 from .takeover import TakeoverView
 from .widgets import Avatar, ImageCache, Toasts, button, card, chip, icon_button, label, repolish
 
-NAV = [("home", "Home", "home"), ("inbox", "Inbox", "inbox"), ("computer", "Computer", "computer"), ("skills", "Skills", "skills"), ("routines", "Routines", "routines"),
+NAV = [("home", "Home", "home"), ("inbox", "Inbox", "inbox"), ("computer", "Computer", "computer"), ("files", "Files", "folder"), ("skills", "Skills", "skills"), ("routines", "Routines", "routines"),
        ("plugins", "Plugins", "plugins"), ("usage", "Usage", "usage"), ("log", "Action log", "log")]
 
 
@@ -413,7 +415,7 @@ class QuickSwitcher(QDialog):
 SHORTCUTS = [
     ("Navigation", [("Ctrl+K", "Command palette: search Bots, pages and actions"), ("Ctrl+0", "Home"), ("Ctrl+1 … 9", "Jump to the 1st … 9th Bot"),
                     ("Ctrl+,", "Settings"), ("Ctrl+/", "This list")]),
-    ("Create", [("Ctrl+N", "New Bot")]),
+    ("Create", [("Ctrl+N", "New Bot"), ("Ctrl+J", "Quick ask: message any Bot without opening its chat"), ("Ctrl+Alt+Space", "Quick ask from anywhere on your PC (can be turned off)")]),
     ("Find", [("Ctrl+K", "Then type: also searches every chat and memory")]),
     ("In a chat", [("Enter", "Send"), ("Shift+Enter", "New line"), ("/", "Slash commands (type / to see them)"), ("Tab", "Complete the highlighted command"),
                    ("Esc", "Close the command list")]),
@@ -450,6 +452,7 @@ class MainWindow(QMainWindow):
     quitRequested = Signal(bool)
     reconnect = Signal(object)
     themeRequested = Signal(str)
+    appPrefsChanged = Signal()
 
     def __init__(self, api: Api, store: Store, tray_available: bool = True):
         super().__init__()
@@ -465,6 +468,8 @@ class MainWindow(QMainWindow):
         self.banner_shown = False
         self.rows: dict[str, SideRow] = {}
         self.current_key = ""
+        self._pins: set[str] = set(load_ui_config().get("pinned_bots", []))
+        self._qa: QuickAsk | None = None
         api.on_unhandled_error = lambda m: self.toast(m, "error")
 
         root = QWidget()
@@ -484,7 +489,7 @@ class MainWindow(QMainWindow):
         self.welcome.openSettings.connect(lambda: self.select("page:settings"))
         self.chat = ChatPage(api, store, self.images)
         self.pages: dict[str, QWidget] = {
-            "home": HomePage(api, store), "inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "skills": SkillsPage(api, store), "routines": RoutinesPage(api, store),
+            "home": HomePage(api, store), "inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "files": FilesPage(api, store), "skills": SkillsPage(api, store), "routines": RoutinesPage(api, store),
             "plugins": PluginsPage(api, store), "usage": UsagePage(api, store), "log": LogPage(api, store), "settings": SettingsPage(api, store),
         }
         for w in (self.welcome, self.chat, *self.pages.values()):
@@ -494,6 +499,9 @@ class MainWindow(QMainWindow):
         self.chat.editBot.connect(self.edit_bot)
         self.chat.editGroup.connect(self.edit_group)
         self.chat.exportBot.connect(self.export_bot)
+        self.chat.pins = self._pins
+        self.chat.duplicateBot.connect(self.duplicate_bot)
+        self.chat.pinBot.connect(self.toggle_pin)
         self.chat.toast.connect(self.toast)
         home: HomePage = self.pages["home"]  # type: ignore[assignment]
         home.openBot.connect(self.show_bot)
@@ -508,6 +516,7 @@ class MainWindow(QMainWindow):
         self.pages["routines"].openThread.connect(self.open_thread)  # type: ignore[attr-defined]
         st: SettingsPage = self.pages["settings"]  # type: ignore[assignment]
         st.themeChanged.connect(self.themeRequested.emit)
+        st.appPrefsChanged.connect(self.appPrefsChanged.emit)
         st.switchConnection.connect(self.reconnect.emit)
         st.restartService.connect(lambda: self.reconnect.emit("restart"))
         st.toast.connect(self.toast)
@@ -533,6 +542,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+,"), self, activated=lambda: self.select("page:settings"))
         QShortcut(QKeySequence("Ctrl+/"), self, activated=self.show_shortcuts)
         QShortcut(QKeySequence("Ctrl+0"), self, activated=lambda: self.select("page:home"))
+        QShortcut(QKeySequence("Ctrl+J"), self, activated=self.quick_ask)
         for n in range(1, 10):
             QShortcut(QKeySequence(f"Ctrl+{n}"), self, activated=lambda n=n: self.jump_to_bot(n - 1))
 
@@ -542,8 +552,11 @@ class MainWindow(QMainWindow):
             self.tray.setToolTip("OpenGrokBot: your Bots keep working in the background")
             m = QMenu()
             m.addAction("Open OpenGrokBot", self.show_window)
+            m.addAction("Quick ask…", lambda: self.quick_ask(True))
             self.tray_needs = m.addAction("Needs you: 0", lambda: self.select("page:inbox"))
             m.addAction("Stop all running tasks", self.stop_all)
+            m.addAction("Pause all Bots", lambda: self.pause_all(True))
+            m.addAction("Resume all Bots", lambda: self.pause_all(False))
             m.addSeparator()
             m.addAction("Quit app (Bots keep running)", lambda: self.quit_app(False))
             m.addAction("Quit and stop all Bots", lambda: self.quit_app(True))
@@ -654,7 +667,7 @@ class MainWindow(QMainWindow):
                 self.bots_box.addWidget(self.rows[key])
             r = self.rows[key]
             kind, text = self.store.state_of(b["id"])
-            r.title.setText(b["name"] + ("  ⏸" if b["paused"] else ""))
+            r.title.setText(("★  " if b["id"] in self._pins else "") + b["name"] + ("  ⏸" if b["paused"] else ""))
             if isinstance(r.leading, Avatar):
                 r.leading.set_emoji(b.get("emoji") or "🤖")
             r.set_sub({"idle": "Idle", "work": text.capitalize(), "wait": "Needs you", "takeover": "You're driving"}[kind],
@@ -662,7 +675,7 @@ class MainWindow(QMainWindow):
             r.set_badge(len(self.store.pending_for_bot(b["id"])))
             r.setToolTip(b.get("job", ""))
         # keep bot rows in store order
-        for i, b in enumerate(self.store.bots):
+        for i, b in enumerate(self.ordered_bots()):
             self.bots_box.insertWidget(i, self.rows[f"bot:{b['id']}"])
         gwant = {f"group:{g['id']}": g for g in self.store.groups}
         for key in [k for k in self.rows if k.startswith("group:") and k not in gwant]:
@@ -749,13 +762,47 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def ordered_bots(self) -> list[dict]:
+        """Pinned Bots first (in their usual order), then the rest."""
+        return sorted(self.store.bots, key=lambda b: b["id"] not in self._pins)
+
     def jump_to_bot(self, i: int) -> None:
-        if i < len(self.store.bots):
-            self.select(f"bot:{self.store.bots[i]['id']}")
+        bots = self.ordered_bots()
+        if i < len(bots):
+            self.select(f"bot:{bots[i]['id']}")
+
+    def toggle_pin(self, bot_id: str) -> None:
+        (self._pins.discard if bot_id in self._pins else self._pins.add)(bot_id)
+        cfg = load_ui_config()
+        cfg["pinned_bots"] = sorted(self._pins)
+        save_ui_config(cfg)
+        self.refresh_lists()
+        self.toast("Pinned to the top." if bot_id in self._pins else "Unpinned.")
+
+    def duplicate_bot(self, bot_id: str) -> None:
+        b = self.store.bot(bot_id)
+        if not b:
+            return
+        name, ok = QInputDialog.getText(self, "Duplicate Bot", "Name for the copy. It keeps the job, instructions and model, but starts with no memory, chats or access.", text=f"{b['name']} copy")
+        if not ok or not name.strip():
+            return
+        self.api.post(f"/api/bots/{bot_id}/duplicate", {"name": name.strip()},
+                      lambda nb: self.store.refresh_all(lambda: (self.show_bot(nb["id"]), self.toast(f"Created {nb['name']}.", "ok"))), lambda e: self.toast(e, "error"))
+
+    def pause_all(self, paused: bool) -> None:
+        self.api.post("/api/bots/pause_all", {"paused": paused}, lambda r: (self.store.refresh_bots(), self.toast(
+            (f"Paused {r['changed']} Bot{'s' if r['changed'] != 1 else ''}." if paused else f"Resumed {r['changed']} Bot{'s' if r['changed'] != 1 else ''}.") if r["changed"] else
+            ("Every Bot was already paused." if paused else "No Bot was paused."))), lambda e: self.toast(e, "error"))
+
+    def quick_ask(self, from_hotkey: bool = False) -> None:
+        if self._qa is None:
+            self._qa = QuickAsk(self.api, self.store)
+            self._qa.sent.connect(self.toast)
+        self._qa.open(self.chat.bot_id if self.current_key.startswith("bot:") else "")
 
     def palette_entries(self) -> list[Entry]:
         out: list[Entry] = []
-        for i, b in enumerate(self.store.bots):
+        for i, b in enumerate(self.ordered_bots()):
             kind, text = self.store.state_of(b["id"])
             sub = {"idle": "Bot", "work": f"Bot  ·  {text}", "wait": "Bot  ·  needs you", "takeover": "Bot  ·  you are driving"}[kind]
             out.append(Entry(f"bot:{b['id']}", b["name"], sub, "bot", "Bots", f"Ctrl+{i + 1}" if i < 9 else "", b.get("emoji") or ""))
@@ -776,6 +823,16 @@ class MainWindow(QMainWindow):
             out.append(Entry("action:dnd1", "Do Not Disturb for 1 hour", "", "alert", "Actions"))
         if self.current_key.startswith(("bot:", "group:")):
             out.append(Entry("action:export", "Export this chat as Markdown…", "", "download", "Actions"))
+        out.append(Entry("action:ask", "Quick ask…", "send a message to any Bot", "send", "Actions", "Ctrl+J"))
+        out.append(Entry("action:digest", "Digest: what did my Bots do today?", "", "log", "Actions"))
+        if any(not b["paused"] for b in self.store.bots):
+            out.append(Entry("action:pauseall", "Pause all Bots", "", "pause", "Actions"))
+        elif self.store.bots:
+            out.append(Entry("action:resumeall", "Resume all Bots", "", "play", "Actions"))
+        if self.current_key.startswith("bot:"):
+            bid = self.current_key.split(":", 1)[1]
+            out.append(Entry("action:pin", "Unpin this Bot" if bid in self._pins else "Pin this Bot to the top", "", "bot", "Actions"))
+            out.append(Entry("action:dup", "Duplicate this Bot…", "", "plus", "Actions"))
         out.append(Entry("action:keys", "Keyboard shortcuts", "", "keyboard", "Actions", "Ctrl+/"))
         return out
 
@@ -812,6 +869,18 @@ class MainWindow(QMainWindow):
             self.toast("Asked every running Bot to stop.")
         elif key == "action:keys":
             self.show_shortcuts()
+        elif key == "action:ask":
+            self.quick_ask()
+        elif key == "action:digest":
+            DigestDialog(self.api, self).exec()
+        elif key == "action:pauseall":
+            self.pause_all(True)
+        elif key == "action:resumeall":
+            self.pause_all(False)
+        elif key == "action:pin":
+            self.toggle_pin(self.current_key.split(":", 1)[1])
+        elif key == "action:dup":
+            self.duplicate_bot(self.current_key.split(":", 1)[1])
         elif key == "action:dnd1":
             self._set_dnd(3600)
         elif key == "action:dndoff":

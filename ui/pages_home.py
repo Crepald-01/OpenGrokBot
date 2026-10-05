@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QTextBrowser, QVBoxLayout,
+                               QWidget)
 
 from . import theme
-from .api import Api
+from .api import Api, load_ui_config, save_ui_config
 from .pages_inbox import fmt_time
 from .pages_usage_log import fmt_tokens
 from .store import Store
@@ -19,6 +21,50 @@ STATE_TEXT = {"idle": "Idle", "work": "Working", "wait": "Needs you", "takeover"
 def greeting() -> str:
     h = datetime.now().hour
     return "Good morning" if 5 <= h < 12 else "Good afternoon" if 12 <= h < 18 else "Good evening"
+
+
+class DigestDialog(QDialog):
+    """What every Bot did: today, yesterday, the last 24 hours or this week. Built from the action log, no model involved."""
+
+    def __init__(self, api: Api, parent=None, spec: str = "today"):
+        super().__init__(parent)
+        self.api = api
+        self.setWindowTitle("Digest")
+        self.resize(640, 640)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(22, 18, 22, 18)
+        top = QHBoxLayout()
+        top.addWidget(label("Digest", h1=True, wrap=False))
+        top.addStretch(1)
+        self.spec = QComboBox()
+        for text, key in (("Today", "today"), ("Yesterday", "yesterday"), ("Last 24 hours", "24h"), ("This week", "week")):
+            self.spec.addItem(text, key)
+        self.spec.setCurrentIndex(max(0, self.spec.findData(spec)))
+        self.spec.currentIndexChanged.connect(lambda _i: self.load())
+        top.addWidget(self.spec)
+        v.addLayout(top)
+        self.view = QTextBrowser()
+        self.view.setOpenExternalLinks(False)
+        v.addWidget(self.view, 1)
+        row = QHBoxLayout()
+        self.copy_btn = button("Copy as Markdown", on=self.copy)
+        row.addWidget(self.copy_btn)
+        row.addStretch(1)
+        row.addWidget(button("Close", primary=True, on=self.accept))
+        v.addLayout(row)
+        self.markdown = ""
+        self.load()
+
+    def load(self) -> None:
+        def ok(d: dict) -> None:
+            self.markdown = d["markdown"]
+            self.view.setMarkdown(d["markdown"])
+        self.api.get("/api/digest", ok, lambda e: self.view.setPlainText(e), params={"spec": self.spec.currentData()})
+
+    def copy(self) -> None:
+        QGuiApplication.clipboard().setText(self.markdown)
+        self.copy_btn.setText("Copied")
+        QTimer.singleShot(1500, lambda: self.copy_btn.setText("Copy as Markdown"))
 
 
 class Tile(QFrame):
@@ -86,6 +132,20 @@ class HomePage(QWidget):
         v.setContentsMargins(36, 30, 36, 28)
         v.setSpacing(theme.dp(20))
 
+        self.banner = QFrame()
+        self.banner.setProperty("card", "question")
+        bl = QHBoxLayout(self.banner)
+        bl.setContentsMargins(18, 12, 12, 12)
+        bl.setSpacing(12)
+        self.banner_text = label("", wrap=False)
+        bl.addWidget(self.banner_text, 1)
+        self.banner_open = button("View release", on=self.open_release)
+        bl.addWidget(self.banner_open)
+        bl.addWidget(button("Dismiss", flat=True, on=self.dismiss_update))
+        self.banner.hide()
+        self.update_info: dict = {}
+        v.addWidget(self.banner)
+
         head = QHBoxLayout()
         col = QVBoxLayout()
         col.setSpacing(4)
@@ -118,6 +178,15 @@ class HomePage(QWidget):
         self.team.setColumnStretch(0, 1)
         self.team.setColumnStretch(1, 1)
         left.addLayout(self.team)
+        left.addSpacing(8)
+        left.addWidget(label("TODAY SO FAR", eyebrow=True))
+        self.digest_card = card()
+        dl = QHBoxLayout(self.digest_card)
+        dl.setContentsMargins(18, 14, 14, 14)
+        self.digest_text = label("Loading…", muted=True)
+        dl.addWidget(self.digest_text, 1)
+        dl.addWidget(button("Full digest", on=lambda: DigestDialog(self.api, self).exec()), 0, Qt.AlignmentFlag.AlignVCenter)
+        left.addWidget(self.digest_card)
         left.addStretch(1)
         cols.addLayout(left, 3)
         right = QVBoxLayout()
@@ -171,9 +240,31 @@ class HomePage(QWidget):
         def feed(rows: list) -> None:
             self.actions = rows
             self.render_feed()
+        def digest(d: dict) -> None:
+            self.digest_text.setText(d["headline"])
+
+        def updates(d: dict) -> None:
+            dismissed = load_ui_config().get("dismissed_update", "")
+            self.update_info = d
+            show = bool(d.get("newer")) and d.get("latest") != dismissed
+            self.banner.setVisible(show)
+            if show:
+                self.banner_text.setText(f"OpenGrokBot {d['latest']} is out. You have {d['current']}.")
+        self.api.get("/api/digest", digest, lambda _e: None, params={"spec": "today"})
+        self.api.get("/api/updates", updates, lambda _e: None)
         self.api.get("/api/usage", usage)
         self.api.get("/api/actions", feed, params={"limit": 8})
         self.render()
+
+    def open_release(self) -> None:
+        if self.update_info.get("url"):
+            QDesktopServices.openUrl(QUrl(self.update_info["url"]))
+
+    def dismiss_update(self) -> None:
+        cfg = load_ui_config()
+        cfg["dismissed_update"] = self.update_info.get("latest", "")
+        save_ui_config(cfg)
+        self.banner.hide()
 
     # ---------------------------------------------------------------- render
     def render(self) -> None:

@@ -5,12 +5,14 @@ import time
 from datetime import datetime, timedelta
 
 from .db import Database, now
+from .pricing import Pricing, key_for
 from .settings import Admin, Settings
 
 
 class Usage:
     def __init__(self, db: Database, settings: Settings, admin: Admin):
         self.db, self.settings, self.admin = db, settings, admin
+        self.pricing = Pricing(settings)
 
     def week_bounds(self, at: float | None = None) -> tuple[float, float]:
         at = at or time.time()
@@ -49,6 +51,35 @@ class Usage:
         lim = self.limit()
         return bool(lim) and self.week_total() >= lim
 
+    def cost_summary(self, since: float | None = None) -> dict:
+        """Estimated spend from the prices you entered. Models without a price are listed in `unpriced`, never guessed."""
+        start = since if since is not None else self.week_bounds()[0]
+        today_start = self.day_start()
+
+        def fold(from_ts: float) -> tuple[float, dict, dict, dict]:
+            rows = self.db.query("SELECT bot_id, profile, model, SUM(input_tokens) AS i, SUM(output_tokens) AS o FROM usage WHERE ts>=? GROUP BY bot_id, profile, model", (from_ts,))
+            total, per_bot, per_model, unpriced = 0.0, {}, {}, {}
+            for r in rows:
+                k = key_for(r["profile"], r["model"])
+                m = per_model.setdefault(k, {"key": k, "profile": r["profile"], "model": r["model"], "input_tokens": 0, "output_tokens": 0, "cost": 0.0, "priced": True})
+                m["input_tokens"] += r["i"] or 0
+                m["output_tokens"] += r["o"] or 0
+                c = self.pricing.cost(r["i"] or 0, r["o"] or 0, r["profile"], r["model"])
+                if c is None:
+                    m["priced"] = False
+                    unpriced[k] = True
+                else:
+                    m["cost"] += c
+                    total += c
+                    per_bot[r["bot_id"]] = per_bot.get(r["bot_id"], 0.0) + c
+            return total, per_bot, per_model, unpriced
+
+        total, per_bot, per_model, unpriced = fold(start)
+        today_total = fold(today_start)[0]
+        p = self.pricing
+        return {"currency": p.currency(), "total": total, "today": today_total, "per_bot": per_bot, "per_model": sorted(per_model.values(), key=lambda m: -(m["input_tokens"] + m["output_tokens"])),
+                "unpriced": sorted(unpriced), "prices": p.table()}
+
     def summary(self) -> dict:
         start, end = self.week_bounds()
         per_bot = self.db.query(
@@ -68,6 +99,6 @@ class Usage:
         total_out = sum(r["output_tokens"] or 0 for r in per_bot)
         today = {r["bot_id"]: int(r["t"]) for r in self.db.query(
             "SELECT bot_id, SUM(input_tokens+output_tokens) AS t FROM usage WHERE ts>=? GROUP BY bot_id", (self.day_start(),))}
-        return {"week_start": start, "resets_at": end, "today": today, "input_tokens": total_in, "output_tokens": total_out,
+        return {"week_start": start, "resets_at": end, "today": today, "cost": self.cost_summary(start), "input_tokens": total_in, "output_tokens": total_out,
                 "total": total_in + total_out, "limit": self.limit(), "per_bot": per_bot, "per_model": per_model,
                 "daily": daily}

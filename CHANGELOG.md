@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.0 (unreleased)
+
+Five big features and five small ones. (There is no 1.4.)
+
+**Major**
+- **Files.** A new page that shows everything your Bots have saved in the shared workspace: recent files, folders, search, previews for text and images, Save a copy, Delete, and Open folder. Paths can never leave the workspace.
+- **Daily digest.** What every Bot did today, yesterday, in the last 24 hours or this week: tasks, files written, sites visited, approvals, tokens. It is built from the action log (no model call, so it is instant and free). Home shows a one-line summary with a Full digest button, `/digest` works in any chat, and an optional daily notification can arrive at a time you choose.
+- **Estimated cost.** Enter what your provider charges per million tokens and Usage shows the estimated spend for the week and today, per Bot and per model. Local models and `:free` models count as free, and models without a price are flagged instead of guessed. `/cost` in chat.
+- **Quick Ask.** `Ctrl+J` (or `Ctrl+Alt+Space` from anywhere on your PC, even with the window closed to the tray) opens a small box: pick a Bot, type, press Enter. It goes to that Bot's chat. Slash commands work too. The global shortcut can be turned off in Settings > App.
+- **Backup and restore.** Settings > App > Back up… saves your Bots, chats, memory, routines, settings and skills (optionally the workspace files) as one zip. API keys and tokens are never included. Restore… checks the file, keeps your current data as a before-restore copy, restarts the service and applies it.
+
+**Minor**
+- **Duplicate Bot.** Same job, instructions, model and limits, but a clean start: no memory, chats or access grants.
+- **Update notice.** Home shows a banner when a newer release exists (one plain request to GitHub a day, nothing about you is sent; switch it off in Settings > App, or check on demand).
+- **Pause all / Resume all.** From the command palette, the tray menu, or `/pauseall` and `/resumeall`.
+- **Pinned Bots.** Pin a Bot to the top of the sidebar (chat menu or palette). `Ctrl+1` to `Ctrl+9` follow the order you see.
+- **Match Windows theme.** A third theme choice that follows Windows' light/dark setting, live.
+
 ## 1.3.0
 
 - **Search everything.** `Ctrl+K`, then type: besides Bots, pages and actions, it now finds words in any conversation (Bots and group chats) and in every Bot's memory, and opens the chat. Also `/search <words>` in a chat.

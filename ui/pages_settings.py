@@ -7,7 +7,7 @@ import time
 
 from PySide6.QtCore import QSize, Qt, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QFrame, QTimeEdit, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QTimeEdit, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMessageBox, QPlainTextEdit, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
 from core import paths
@@ -107,6 +107,7 @@ def form() -> QFormLayout:
 
 class SettingsPage(QWidget):
     themeChanged = Signal(str)
+    appPrefsChanged = Signal()
     switchConnection = Signal(object)
     toast = Signal(str, str)
     restartService = Signal()
@@ -370,6 +371,11 @@ class SettingsPage(QWidget):
             t.setDisplayFormat("HH:mm")
         f.addRow("Quiet from", self.q_start)
         f.addRow("Quiet until", self.q_end)
+        self.d_on = QCheckBox("Daily digest: one notification a day with what your Bots did")
+        v.addWidget(self.d_on)
+        self.d_time = QTimeEdit()
+        self.d_time.setDisplayFormat("HH:mm")
+        f.addRow("Digest at", self.d_time)
         self.no_url = QLineEdit()
         self.no_url.setPlaceholderText("https://ntfy.sh")
         self.no_topic = QLineEdit()
@@ -399,7 +405,8 @@ class SettingsPage(QWidget):
         body = {"notifications.toast": self.no_toast.isChecked(), "notifications.sound": self.no_sound.isChecked(), "notifications.on_finish": self.no_finish.isChecked(),
                 "notifications.on_approval": self.no_appr.isChecked(), "notifications.min_turn_seconds": self.no_min.value(), "notifications.ntfy_url": self.no_url.text().strip(),
                 "notifications.ntfy_topic": self.no_topic.text().strip(), "notifications.quiet_enabled": self.q_on.isChecked(),
-                "notifications.quiet_start": self.q_start.time().toString("HH:mm"), "notifications.quiet_end": self.q_end.time().toString("HH:mm")}
+                "notifications.quiet_start": self.q_start.time().toString("HH:mm"), "notifications.quiet_end": self.q_end.time().toString("HH:mm"),
+                "digest.enabled": self.d_on.isChecked(), "digest.time": self.d_time.time().toString("HH:mm")}
         self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.no_msg.setText("Saved.")), lambda e: self.no_msg.setText(e))
 
     def set_dnd(self, secs: int) -> None:
@@ -585,6 +592,7 @@ class SettingsPage(QWidget):
         self.a_theme = QComboBox()
         self.a_theme.addItem("Dark (calm, default)", "dark")
         self.a_theme.addItem("Light", "light")
+        self.a_theme.addItem("Match Windows (changes with your system)", "auto")
         f.addRow("Theme", self.a_theme)
         cfg0 = load_ui_config()
         self.a_accent = AccentPicker(cfg0.get("accent", "indigo"))
@@ -604,6 +612,11 @@ class SettingsPage(QWidget):
         v.addWidget(self.a_tray)
         self.a_start = QCheckBox("Start with Windows (minimised to the tray)")
         v.addWidget(self.a_start)
+        self.a_hotkey = QCheckBox("Global shortcut: Ctrl+Alt+Space opens Quick Ask from anywhere (Ctrl+J inside the app always works)")
+        self.a_hotkey.setChecked(bool(cfg0.get("quick_hotkey", True)))
+        v.addWidget(self.a_hotkey)
+        self.a_updates = QCheckBox("Tell me when a new version is out (one request to GitHub a day, nothing about you is sent)")
+        v.addWidget(self.a_updates)
         v.addWidget(button("Save", primary=True, on=self.save_app))
         self.a_info = label("", muted=True)
         v.addWidget(self.a_info)
@@ -612,6 +625,19 @@ class SettingsPage(QWidget):
         row.addWidget(button("Open logs", on=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.logs_dir())))))
         row.addStretch(1)
         v.addLayout(row)
+        v.addSpacing(6)
+        v.addWidget(label("Backup and restore", h2=True))
+        v.addWidget(label("A backup holds your Bots, chats, memory, routines, settings and skills in one zip. API keys and tokens stay in the Windows Credential Manager and are not included.", muted=True))
+        self.a_ws = QCheckBox("Also include the shared workspace files")
+        v.addWidget(self.a_ws)
+        brow = QHBoxLayout()
+        brow.addWidget(button("Back up…", icon="download", on=self.backup_now))
+        brow.addWidget(button("Restore…", icon="upload", on=self.restore_backup))
+        brow.addWidget(button("Check for updates", on=self.check_updates))
+        brow.addStretch(1)
+        v.addLayout(brow)
+        self.a_backup_msg = label("", muted=True)
+        v.addWidget(self.a_backup_msg)
         self.a_admin = label("", muted=True)
         v.addWidget(self.a_admin)
         v.addStretch(1)
@@ -660,8 +686,50 @@ class SettingsPage(QWidget):
             self._set_autostart(self.a_start.isChecked())
         except OSError as e:
             self.a_info.setText(f"Could not change autostart: {e}")
+        cfg = load_ui_config()
+        cfg["quick_hotkey"] = self.a_hotkey.isChecked()
+        save_ui_config(cfg)
         t = self.a_theme.currentData()
-        self.api.put("/api/settings", {"theme": t}, lambda s: (setattr(self.store, "settings", s), self.themeChanged.emit(t), self.a_info.setText("Saved.")))
+        self.api.put("/api/settings", {"theme": t, "updates.check": self.a_updates.isChecked()},
+                     lambda s: (setattr(self.store, "settings", s), self.appPrefsChanged.emit(), self.themeChanged.emit(t), self.a_info.setText("Saved.")))
+
+    def backup_now(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Back up OpenGrokBot", "opengrokbot-backup-" + time.strftime("%Y%m%d-%H%M") + ".zip", "Backup (*.zip)")
+        if not path:
+            return
+        self.a_backup_msg.setText("Backing up…")
+
+        def ok(data: bytes) -> None:
+            with open(path, "wb") as f:
+                f.write(data)
+            self.a_backup_msg.setText(f"Saved {path} ({len(data) / 1024 / 1024:.1f} MB).")
+        self.api.request("GET", "/api/backup", ok, lambda e: self.a_backup_msg.setText(e), params={"workspace": str(self.a_ws.isChecked()).lower()}, raw=True)
+
+    def restore_backup(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Restore from a backup", "", "Backup (*.zip)")
+        if not path:
+            return
+        if QMessageBox.question(self, "Restore backup", "Replace your Bots, chats, memory and settings with the ones in this backup?\n\nYour current data is kept as a before-restore file in the data folder, and the background service restarts.") != QMessageBox.StandardButton.Yes:
+            return
+        with open(path, "rb") as f:
+            data = f.read()
+
+        def ok(r: dict) -> None:
+            self.a_backup_msg.setText(f"Backup accepted: {r['bots']} Bots, {r['threads']} chats. Restarting the service to apply it…")
+            QTimer.singleShot(800, self.restartService.emit)
+        self.api.request("POST", "/api/backup/restore", ok, lambda e: self.a_backup_msg.setText(e), content=data, timeout=300.0)
+
+    def check_updates(self) -> None:
+        self.a_backup_msg.setText("Checking…")
+
+        def ok(d: dict) -> None:
+            if d.get("error") and not d.get("latest"):
+                self.a_backup_msg.setText("Could not check: " + d["error"])
+            elif d.get("newer"):
+                self.a_backup_msg.setText(f"{d['latest']} is available (you have {d['current']}): {d['url']}")
+            else:
+                self.a_backup_msg.setText(f"You are up to date ({d['current']}).")
+        self.api.get("/api/updates", ok, lambda e: self.a_backup_msg.setText(e), params={"refresh": "true"})
 
     # ============================================================ load values
     def load(self) -> None:
@@ -697,8 +765,12 @@ class SettingsPage(QWidget):
         self.q_on.setChecked(bool(no.get("quiet_enabled", False)))
         self.q_start.setTime(QTime.fromString(no.get("quiet_start", "22:00"), "HH:mm"))
         self.q_end.setTime(QTime.fromString(no.get("quiet_end", "07:00"), "HH:mm"))
+        dg = s.get("digest", {})
+        self.d_on.setChecked(bool(dg.get("enabled", False)))
+        self.d_time.setTime(QTime.fromString(dg.get("time", "18:00"), "HH:mm"))
         self.c_headless.setChecked(bool(s.get("computer", {}).get("headless", True)))
         self.a_theme.setCurrentIndex(max(0, self.a_theme.findData(s.get("theme", "dark"))))
+        self.a_updates.setChecked(bool(s.get("updates", {}).get("check", True)))
         st = self.store.status
         if st:
             self.a_info.setText(f"OpenGrokBot {st.get('version', '')}  ·  data folder: {st.get('data_dir', '')}  ·  secrets backend: {'Windows Credential Manager / keyring' if s.get('secrets_backend') else 'NOT AVAILABLE (use environment variables)'}")

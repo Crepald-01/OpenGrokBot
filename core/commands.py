@@ -390,6 +390,45 @@ def _search(c: Ctx):
     return "\n".join(lines)
 
 
+@command("digest", "What every Bot did: today, yesterday, 24h or week", "/digest [today | yesterday | 24h | week]", group="Info", aliases=("summary", "recap"))
+def _digest(c: Ctx):
+    from .digest import SPECS
+    spec = c.args.strip().lower() or "today"
+    if spec not in SPECS:
+        return {"level": "warn", "text": "Choose one of: " + ", ".join(SPECS) + "."}
+    return c.eng.digest.markdown(c.eng.digest.build(spec), title=False)
+
+
+@command("cost", "Estimated spend this week and today", "/cost", group="Info", aliases=("spend",))
+def _cost(c: Ctx):
+    from .pricing import fmt_money
+    s = c.eng.usage.cost_summary()
+    cur = s["currency"]
+    lines = [f"**This week:** about {fmt_money(s['total'], cur)} · **today:** {fmt_money(s['today'], cur)} (estimates from the prices you entered)."]
+    names = {b["id"]: b for b in c.eng.bots.list(include_archived=True)}
+    for bid, amt in sorted(s["per_bot"].items(), key=lambda kv: -kv[1])[:6]:
+        b = names.get(bid, {})
+        lines.append(f"- {b.get('emoji', '')} {b.get('name', 'Bot')}: {fmt_money(amt, cur)}")
+    if s["unpriced"]:
+        lines.append(f"\n{len(s['unpriced'])} model{'s have' if len(s['unpriced']) != 1 else ' has'} no price yet, so {'they are' if len(s['unpriced']) != 1 else 'it is'} not counted: " + ", ".join(f"`{k}`" for k in s["unpriced"][:4])
+                     + ". Add prices on the Usage page.")
+    return "\n".join(lines)
+
+
+@command("pauseall", "Pause every Bot (they stop picking up work)", "/pauseall", group="Bot", aliases=("freeze",))
+def _pauseall(c: Ctx):
+    n = c.eng.bots.set_paused_all(True)
+    for r in c.eng.turns.active():
+        c.eng.turns.stop_bot(r["bot_id"])
+    return f"Paused {n} Bot{'s' if n != 1 else ''}. Use /resumeall to let them work again." if n else "Every Bot is already paused."
+
+
+@command("resumeall", "Resume every paused Bot", "/resumeall", group="Bot")
+def _resumeall(c: Ctx):
+    n = c.eng.bots.set_paused_all(False)
+    return f"Resumed {n} Bot{'s' if n != 1 else ''}." if n else "No Bot was paused."
+
+
 @command("version", "Show the app version", "/version", group="Info", aliases=("about",))
 def _version(c: Ctx):
     return f"OpenGrokBot **{VERSION}** · up {int((time.time() - c.eng.started) // 60)} min · data in `{c.eng.status()['data_dir']}`"

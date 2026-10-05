@@ -21,7 +21,8 @@ LIGHT = {
     "bad": "#c24747", "bad_bg": "#fbe6e6", "user": "#e1e9ff", "code": "#eef0f6", "hover": "#eceff5", "select": "#e6ecff",
 }
 _current = dict(DARK)
-_name = "dark"
+_name = "dark"        # the theme in use: dark or light
+_pref = "dark"        # what the user chose: dark, light or auto (match Windows)
 
 FONT = '"Segoe UI Variable Text", "Segoe UI", "Inter", "SF Pro Text", "Helvetica Neue", Arial, sans-serif'
 
@@ -73,9 +74,29 @@ def theme_name() -> str:
     return _name
 
 
+def _apps_use_light() -> bool | None:
+    """Windows' own light/dark setting for apps (None when it cannot be read, e.g. on other systems)."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+            return bool(winreg.QueryValueEx(k, "AppsUseLightTheme")[0])
+    except (ImportError, OSError):
+        return None
+
+
+def system_theme() -> str:
+    return "light" if _apps_use_light() else "dark"
+
+
+def preference() -> str:
+    return _pref
+
+
 def set_theme(name: str) -> dict:
-    global _name
-    _name = "light" if name == "light" else "dark"
+    """name: dark | light | auto. `auto` follows Windows' app mode."""
+    global _name, _pref
+    _pref = name if name in ("light", "dark", "auto") else "dark"
+    _name = system_theme() if _pref == "auto" else _pref
     _rebuild()
     return _current
 

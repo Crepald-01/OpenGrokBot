@@ -456,7 +456,10 @@ class ChatPage(QWidget):
     editBot = Signal(str)
     editGroup = Signal(str)
     exportBot = Signal(str)
+    duplicateBot = Signal(str)
+    pinBot = Signal(str)
     toast = Signal(str, str)
+    pins: set = set()     # shared with the main window: the ids of pinned Bots
 
     def __init__(self, api: Api, store: Store, images: ImageCache):
         super().__init__()
@@ -985,6 +988,8 @@ class ChatPage(QWidget):
             m.addAction("Edit Bot…", lambda: self.editBot.emit(self.bot_id))
             b = self.store.bot(self.bot_id)
             m.addAction("Resume Bot" if b and b["paused"] else "Pause Bot", self._toggle_pause)
+            m.addAction("Unpin from the top" if self.bot_id in self.pins else "Pin to the top", lambda: self.pinBot.emit(self.bot_id))
+            m.addAction("Duplicate Bot…", lambda: self.duplicateBot.emit(self.bot_id))
             m.addSeparator()
             m.addAction("Rename thread…", self._rename)
             m.addAction("Export chat as Markdown…", self.export_chat)

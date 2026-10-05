@@ -125,6 +125,7 @@ def run_service(host: str | None = None, port: int | None = None, ssl_certfile: 
     token = service_token()
     app = create_app(engine, token)
     engine.start()
+    engine.start_background_checks()
     paths.service_info_path().write_text(json.dumps({"host": host, "port": port, "pid": os.getpid(), "started": time.time(), "scheme": scheme}))
     engine.log.info("Service listening on %s://%s:%d", scheme, host, port)
     try:

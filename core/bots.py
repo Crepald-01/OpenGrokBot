@@ -111,6 +111,33 @@ class Bots:
         self.events.publish("bots", change="updated", bot_id=bot_id)
         return self.get(bot_id)  # type: ignore
 
+    def duplicate(self, bot_id: str, name: str | None = None) -> dict:
+        """A new Bot with the same job, instructions, model, approval mode and limits. It does not copy access grants,
+        conversations or memory: the copy starts clean and asks for access itself."""
+        src = self.get(bot_id)
+        if not src:
+            raise BotError("No such Bot.")
+        base = (name or f"{src['name']} copy").strip()[:36]
+        new_name, n = base, 1
+        while self.get_by_name(new_name):
+            n += 1
+            new_name = f"{base} {n}"
+        bot = self.create(new_name, job=src["job"], instructions=src["instructions"], emoji=src["emoji"], profile=src["profile"], model=src["model"],
+                          approval_mode=src["approval_mode"], step_limit=src["step_limit"], net_mode=src["net_mode"], net_allow=src["net_allow"],
+                          net_deny=src["net_deny"], proactive=src["proactive"], template=src["template"])
+        if src["daily_token_limit"]:
+            bot = self.update(bot["id"], daily_token_limit=src["daily_token_limit"])
+        return bot
+
+    def set_paused_all(self, paused: bool) -> int:
+        """Pause or resume every active Bot. Returns how many changed."""
+        n = 0
+        for b in self.list():
+            if b["paused"] != paused:
+                self.update(b["id"], paused=paused)
+                n += 1
+        return n
+
     def delete(self, bot_id: str) -> None:
         for t in self.db.query("SELECT id FROM threads WHERE bot_id=?", (bot_id,)):
             self.db.execute("DELETE FROM messages WHERE thread_id=?", (t["id"],))

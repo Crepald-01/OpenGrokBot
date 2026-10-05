@@ -34,6 +34,7 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 - **Teams.** Bots message each other, work in group chats with `@mentions`, and hand off tasks with a single owner. A Chief of Staff Bot coordinates specialists.
 - **Learn by demonstration.** Press *Follow along*, do the job once, and the Bot drafts a **skill** from what you did. Test it, activate it, schedule it as a **routine**.
 - **Home dashboard.** One screen for the whole team: what needs you, who is working, token use for the week and recent actions. `Ctrl+K` opens a command palette, `Ctrl+1`-`9` jump to a Bot, and Settings > App lets you pick an accent colour, density and text size.
+- **Files, digest, cost and backup.** A Files page for what your Bots save, a daily digest of what they did, estimated spend from your own prices, Quick Ask (`Ctrl+J`, or `Ctrl+Alt+Space` anywhere), and one-zip backup and restore.
 - **Search, quiet hours and budgets.** `Ctrl+K` searches every chat and memory, Do Not Disturb and quiet hours silence notifications without losing them, and each Bot can have a daily token budget.
 - **Routines.** Run a skill or prompt on a cron schedule, per Bot, with history and notifications.
 - **Bring your own model.** Anthropic or any OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM...). Models are **detected from your provider** and offered in a dropdown, and every Bot can use its own provider and model.
@@ -57,6 +58,10 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 <tr>
 <td width="50%"><img src="docs/screenshots/appearance.png" alt="Violet accent, compact density, large text"><br><sub><b>Make it yours.</b> Accent colour, density and text size.</sub></td>
 <td width="50%"><img src="docs/screenshots/light-home.png" alt="Home in the light theme"><br><sub><b>Light, too.</b> Every accent works in both themes.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/files.png" alt="The Files page"><br><sub><b>Files.</b> Everything your Bots saved, with previews.</sub></td>
+<td width="50%"><img src="docs/screenshots/usage-cost.png" alt="Usage with estimated cost"><br><sub><b>Cost.</b> Estimated spend from the prices you enter.</sub></td>
 </tr>
 </table>
 
@@ -151,6 +156,8 @@ Type `/` in a chat (desktop or phone) to see the commands. They run in the backg
 | `/dnd [2h \| off]` | Do Not Disturb: silence pop-ups, sounds and phone pushes for a while |
 | `/search <words>` | Search every chat and memory |
 | `/retry`, `/export` | Send your last message again; save this chat as Markdown |
+| `/digest [today \| yesterday \| 24h \| week]`, `/cost` | What your Bots did; estimated spend |
+| `/pauseall`, `/resumeall` | Pause or resume every Bot |
 | `/usage`, `/version`, `/help` | Info |
 
 ## A good first task

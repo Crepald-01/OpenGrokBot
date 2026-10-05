@@ -16,11 +16,12 @@ from typing import Any
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from core import VERSION, commands, packages, paths, secrets, skills as skills_mod
+from core import VERSION, backup as backup_mod, commands, packages, paths, secrets, skills as skills_mod
 from core.browser import BrowserError
 from core.bots import BotError
 from core.computer import ComputerError
 from core.engine import Engine
+from core.files import FileError
 from core.plugins import ConnectorError
 from core.providers import ProviderError, make_provider
 from core.routines import PRESETS
@@ -247,6 +248,89 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             p.write_bytes(raw)
             paths_.append(str(p))
         return eng.send_user_message(tid, body.get("text", ""), paths_)
+
+    @app.get("/api/digest", dependencies=[api])
+    def digest(spec: str = "today") -> dict:
+        d = eng.digest.build(spec)
+        return {**d, "headline": eng.digest.headline(d), "markdown": eng.digest.markdown(d)}
+
+    @app.post("/api/bots/pause_all", dependencies=[api])
+    def bots_pause_all(body: dict = Body(default={})) -> dict:
+        paused = bool(body.get("paused", True))
+        n = eng.bots.set_paused_all(paused)
+        if paused:
+            for r in eng.turns.active():
+                eng.turns.stop_bot(r["bot_id"])
+        return {"changed": n, "paused": paused}
+
+    @app.post("/api/bots/{bot_id}/duplicate", dependencies=[api])
+    def bots_duplicate(bot_id: str, body: dict = Body(default={})) -> dict:
+        return eng.bots.duplicate(bot_id, body.get("name"))
+
+    @app.get("/api/updates", dependencies=[api])
+    def updates(refresh: bool = False) -> dict:
+        return eng.updates.check(force=True) if refresh else eng.updates.state()
+
+    @app.put("/api/pricing", dependencies=[api])
+    def pricing_put(body: dict = Body(...)) -> dict:
+        eng.usage.pricing.set_prices(body.get("models", {}), body.get("currency"))
+        return eng.usage.cost_summary()
+
+    @app.get("/api/backup", dependencies=[api])
+    def backup_get(workspace: bool = False) -> Response:
+        try:
+            data = backup_mod.create(eng, include_workspace=workspace)
+        except backup_mod.BackupError as e:
+            raise HTTPException(400, str(e))
+        name = "opengrokbot-backup-" + time.strftime("%Y%m%d-%H%M") + ".zip"
+        return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    @app.post("/api/backup/restore", dependencies=[api])
+    async def backup_restore(request: Request) -> dict:
+        data = await request.body()
+        try:
+            info = await asyncio.to_thread(backup_mod.stage_restore, data)
+        except backup_mod.BackupError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True, "restart_required": True, **info}
+
+    @app.get("/api/ws/list", dependencies=[api])
+    def ws_list(path: str = "") -> dict:
+        try:
+            return eng.files.list(path)
+        except FileError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/ws/recent", dependencies=[api])
+    def ws_recent(limit: int = 30) -> dict:
+        return {"entries": eng.files.recent(max(1, min(200, limit))), "stats": eng.files.stats()}
+
+    @app.get("/api/ws/search", dependencies=[api])
+    def ws_search(q: str = "") -> dict:
+        return {"entries": eng.files.search(q)}
+
+    @app.get("/api/ws/preview", dependencies=[api])
+    def ws_preview(path: str) -> dict:
+        try:
+            return eng.files.preview(path)
+        except FileError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/api/ws/raw", dependencies=[api])
+    def ws_raw(path: str) -> Response:
+        try:
+            p, mime = eng.files.raw(path)
+        except FileError as e:
+            raise HTTPException(400, str(e))
+        return Response(p.read_bytes(), media_type=mime, headers={"Content-Disposition": f'attachment; filename="{p.name}"'})
+
+    @app.delete("/api/ws/file", dependencies=[api])
+    def ws_delete(path: str) -> dict:
+        try:
+            eng.files.delete(path)
+        except FileError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
 
     @app.get("/api/search", dependencies=[api])
     def search(q: str = "", limit: int = 30) -> dict:

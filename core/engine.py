@@ -7,13 +7,15 @@ import threading
 import time
 from typing import Any
 
-from . import VERSION, commands, notify as notifier, paths, quiet
+from . import VERSION, backup, commands, notify as notifier, paths, quiet
 from .actionlog import ActionLog
 from .agent import AgentRun, TurnManager, run_reflection
 from .approvals import ApprovalManager
 from .bots import Bots
 from .computer import Computer
 from .db import Database, new_id, now
+from .digest import Digest
+from .files import Files
 from .events import EventBus
 from .mcp import McpManager
 from .memory import Memory
@@ -28,6 +30,7 @@ from .templates import TEAM_PRESET, template as get_template
 from .threads import Threads
 from .tooling import ToolSpec
 from .tools_builtin import builtin_tools
+from .updates import Updates
 from .usage import Usage
 
 
@@ -47,6 +50,9 @@ def setup_logging() -> logging.Logger:
 class Engine:
     def __init__(self) -> None:
         self.log = setup_logging()
+        restored = backup.apply_pending()   # a staged restore is applied before any database connection exists
+        if restored:
+            self.log.info(restored)
         self.db = Database(paths.db_path())
         self.settings = Settings(self.db)
         self.admin = Admin()
@@ -60,8 +66,11 @@ class Engine:
         self.approvals = ApprovalManager(self.db, self.events, self.settings, self.admin)
         self.approvals.engine = self
         self.computer = Computer(self.db, self.settings, self.net, self.events)
+        self.files = Files(self.computer.workspace)
         self.threads = Threads(self.db, self.events, self.bots.names, self.describe_tool)
         self.search = Search(self.db, self.bots.names)
+        self.digest = Digest(self)
+        self.updates = Updates(self.settings)
         self.mcp = McpManager(self.db, self.admin)
         self.plugins = PluginManager(self)
         self.messaging = Messaging(self)
@@ -82,7 +91,25 @@ class Engine:
         s.add_job(self.messaging.run_due_followups, "interval", minutes=1, id="_followups", replace_existing=True)
         s.add_job(self.messaging.nudge_stalled, "interval", minutes=15, id="_nudge", replace_existing=True)
         s.add_job(self.messaging.proactive_tick, "interval", minutes=10, id="_proactive", replace_existing=True)
+        s.add_job(self._digest_tick, "interval", minutes=1, id="_digest", replace_existing=True)
         self.log.info("Engine started (v%s). Data dir: %s", VERSION, paths.data_dir())
+
+    def start_background_checks(self) -> None:
+        """Only the real service calls this (tests and tools that embed the engine never touch the network)."""
+        threading.Thread(target=self.updates.check, daemon=True, name="update-check").start()
+        self.routines.sched.add_job(self.updates.check, "interval", hours=6, id="_updates", replace_existing=True)
+
+    def _digest_tick(self) -> None:
+        """Once a day at the chosen time, post the digest as a notification (quiet hours apply)."""
+        cfg = self.settings.get("digest", {}) or {}
+        if not cfg.get("enabled"):
+            return
+        today = time.strftime("%Y-%m-%d")
+        if cfg.get("last_sent") == today or time.strftime("%H:%M") < str(cfg.get("time", "18:00")):
+            return
+        self.settings.set("digest.last_sent", today)
+        d = self.digest.build("today")
+        self.notify("digest", None, None, "Your daily digest", self.digest.headline(d))
 
     def stop(self) -> None:
         self.turns.stop_all()
@@ -154,7 +181,7 @@ class Engine:
             return
         if cfg.get("toast", True) and not self.events.has_subscriber("desktop"):
             notifier.toast(title, body)
-        if cfg.get("ntfy_url") and cfg.get("ntfy_topic") and (urgent or kind in ("approval", "question", "takeover", "login", "finished", "error", "routine")):
+        if cfg.get("ntfy_url") and cfg.get("ntfy_topic") and (urgent or kind in ("approval", "question", "takeover", "login", "finished", "error", "routine", "digest")):
             notifier.ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], title, body, urgent)
 
     def on_turn_end(self, run: AgentRun) -> None:

@@ -7,11 +7,12 @@ import time
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox, QProgressBar, QPushButton,
-                               QSpinBox, QSplitter, QTextBrowser, QVBoxLayout, QWidget)
+                               QSpinBox, QSplitter, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
 from . import theme
 from .api import Api
 from .pages_inbox import fill_row, fmt_time, make_table
+from core.pricing import fmt_money
 from .store import Store
 from .widgets import button, card, label, PageHeader, page_layout
 
@@ -57,7 +58,8 @@ class UsagePage(QWidget):
         self.c_in = self._stat("Input tokens", "0")
         self.c_out = self._stat("Output tokens", "0")
         self.c_reset = self._stat("Resets in", "—")
-        for c in (self.c_total, self.c_in, self.c_out, self.c_reset):
+        self.c_cost = self._stat("Est. cost", "—")
+        for c in (self.c_total, self.c_in, self.c_out, self.c_cost, self.c_reset):
             top.addWidget(c[0])
         v.addLayout(top)
         self.bar = QProgressBar()
@@ -70,12 +72,25 @@ class UsagePage(QWidget):
         self.daily = DailyBars()
         v.addWidget(self.daily)
         v.addWidget(label("BY BOT", eyebrow=True))
-        self.table = make_table(["Bot", "Tasks", "Input", "Output", "Total"], 0)
+        self.table = make_table(["Bot", "Tasks", "Input", "Output", "Total", "Est. cost"], 0)
         v.addWidget(self.table, 1)
-        v.addWidget(label("BY MODEL", eyebrow=True))
-        self.models = make_table(["Provider", "Model", "Input", "Output"], 1)
-        self.models.setMaximumHeight(130)
-        v.addWidget(self.models)
+        v.addWidget(label("BY MODEL AND PRICES (per million tokens). Enter what your provider charges; free and local models count as free.", eyebrow=True))
+        self.prices = make_table(["Model", "Tokens in", "Tokens out", "Input price", "Output price", "Est. cost"], 0)
+        self.prices.setEditTriggers(self.prices.EditTrigger.DoubleClicked | self.prices.EditTrigger.EditKeyPressed | self.prices.EditTrigger.AnyKeyPressed)
+        self.prices.setMaximumHeight(170)
+        self.prices.itemChanged.connect(lambda _it: setattr(self, "_price_dirty", True))
+        self._price_dirty = False
+        v.addWidget(self.prices)
+        prow = QHBoxLayout()
+        prow.addWidget(label("Currency", muted=True, wrap=False))
+        self.currency = QLineEdit("$")
+        self.currency.setMaximumWidth(60)
+        self.currency.textChanged.connect(lambda _t: setattr(self, "_price_dirty", True))
+        prow.addWidget(self.currency)
+        prow.addWidget(button("Save prices", on=self.save_prices))
+        self.price_msg = label("", faint=True, wrap=False)
+        prow.addWidget(self.price_msg, 1)
+        v.addLayout(prow)
         row = QHBoxLayout()
         row.addWidget(label("Weekly limit (tokens, 0 = none)", muted=True, wrap=False))
         self.limit = QSpinBox()
@@ -126,16 +141,64 @@ class UsagePage(QWidget):
                 self.bar.setValue(0)
                 self.limit_label.setText("No weekly limit set.")
             self.daily.set_data(d["daily"])
+            cost = d.get("cost", {})
+            cur = cost.get("currency", "$")
+            self.c_cost[1].setText(fmt_money(cost.get("total", 0), cur) + ("+" if cost.get("unpriced") else ""))
+            self.c_cost[0].setToolTip("Based on the prices below. A + means some models have no price yet." if cost.get("unpriced") else "Based on the prices below.")
             self.table.setRowCount(0)
             for r in d["per_bot"]:
-                fill_row(self.table, [f"{r['emoji']} {r['name']}", r["turns"], fmt_tokens(r["input_tokens"] or 0), fmt_tokens(r["output_tokens"] or 0), fmt_tokens((r["input_tokens"] or 0) + (r["output_tokens"] or 0))])
-            self.models.setRowCount(0)
-            for r in d["per_model"]:
-                fill_row(self.models, [r["profile"], r["model"], fmt_tokens(r["input_tokens"] or 0), fmt_tokens(r["output_tokens"] or 0)])
+                bc = cost.get("per_bot", {}).get(r["bot_id"])
+                fill_row(self.table, [f"{r['emoji']} {r['name']}", r["turns"], fmt_tokens(r["input_tokens"] or 0), fmt_tokens(r["output_tokens"] or 0), fmt_tokens((r["input_tokens"] or 0) + (r["output_tokens"] or 0)),
+                                      fmt_money(bc, cur) if bc is not None else "—"])
+            if not self._price_dirty:
+                self._fill_prices(cost)
             if not self.limit.hasFocus():
                 self.limit.setValue(d["limit"] if not (self.store.status.get("admin", {}).get("policy", {}).get("weekly_token_limit")) else self.store.settings.get("usage", {}).get("weekly_token_limit", 0))
             self.day.setCurrentIndex(int(self.store.settings.get("usage", {}).get("reset_weekday", 0)))
         self.api.get("/api/usage", ok)
+
+    def _fill_prices(self, cost: dict) -> None:
+        cur = cost.get("currency", "$")
+        self.prices.blockSignals(True)
+        self.prices.setRowCount(0)
+        rows = {m["key"]: m for m in cost.get("per_model", [])}
+        for k in cost.get("prices", {}):
+            rows.setdefault(k, {"key": k, "cost": 0.0, "priced": True})
+        table = cost.get("prices", {})
+        for k, m in sorted(rows.items()):
+            p = table.get(k)
+            free = m.get("priced") and p is None
+            r = fill_row(self.prices, [k, fmt_tokens(m.get("input_tokens", 0)), fmt_tokens(m.get("output_tokens", 0)), "" if p is None else f"{p['in']:g}",
+                                       "" if p is None else f"{p['out']:g}", fmt_money(m.get("cost"), cur) if m.get("priced") else "no price"], k)
+            if free:
+                self.prices.item(r, 3).setText("free")
+                self.prices.item(r, 4).setText("free")
+            for c in (0, 1, 2, 5):
+                it = self.prices.item(r, c)
+                it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.currency.blockSignals(True)
+        self.currency.setText(cur)
+        self.currency.blockSignals(False)
+        self.prices.blockSignals(False)
+
+    def save_prices(self) -> None:
+        models = {}
+        for r in range(self.prices.rowCount()):
+            key = self.prices.item(r, 0).data(Qt.ItemDataRole.UserRole)
+            a, b = self.prices.item(r, 3).text().strip(), self.prices.item(r, 4).text().strip()
+            if a.lower() == "free" and b.lower() == "free" or (not a and not b):
+                continue
+            try:
+                models[key] = {"in": float(a or 0), "out": float(b or 0)}
+            except ValueError:
+                self.price_msg.setText(f"“{a}” / “{b}” is not a number (row {r + 1}).")
+                return
+
+        def ok(_c: dict) -> None:
+            self._price_dirty = False
+            self.price_msg.setText("Saved.")
+            self.load()
+        self.api.put("/api/pricing", {"models": models, "currency": self.currency.text().strip() or "$"}, ok, lambda e: self.price_msg.setText(e))
 
     def save(self) -> None:
         self.api.put("/api/settings", {"usage.weekly_token_limit": self.limit.value(), "usage.reset_weekday": self.day.currentData()}, lambda s: (setattr(self.store, "settings", s), self.load()))

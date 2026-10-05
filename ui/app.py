@@ -11,6 +11,7 @@ from core import secrets
 from . import theme
 from .api import Api, Connection, EventThread, load_ui_config, save_ui_config, remote_token
 from .main_window import MainWindow
+from .quick_ask import GlobalHotkey
 from .store import Store
 
 SINGLE_KEY = "OpenGrokBotUI"
@@ -65,6 +66,11 @@ class Controller(QObject):
         self.window: MainWindow | None = None
         self.splash: Splash | None = None
         self.starter: ServiceStarter | None = None
+        self.hotkey = GlobalHotkey()
+        self.hotkey.triggered.connect(lambda: self.window and self.window.quick_ask(True))
+        self._theme_timer = QTimer(self)
+        self._theme_timer.timeout.connect(self._follow_system_theme)
+        self._theme_timer.start(30_000)
 
     def start(self) -> None:
         cfg = load_ui_config()
@@ -118,12 +124,13 @@ class Controller(QObject):
         self.store.apply_bootstrap(d)
         self.store.connected = True
         theme_name = d["settings"].get("theme", "dark")
-        if theme_name != theme.theme_name():
+        if theme_name != theme.preference():
             theme.set_theme(theme_name)
             self.app.setStyleSheet(theme.qss())
         if self.window is None:
             self.window = self._make_window()
             self.window.start_page()
+            self.apply_prefs()
         if not self.start_hidden:
             self.window.show_window()
         self.start_hidden = False
@@ -133,7 +140,21 @@ class Controller(QObject):
         w.reconnect.connect(self.on_reconnect)
         w.quitRequested.connect(self.on_quit)
         w.themeRequested.connect(self.on_theme)
+        w.appPrefsChanged.connect(lambda: self.apply_prefs(announce=True))
         return w
+
+    def apply_prefs(self, announce: bool = False) -> None:
+        """Turn the system-wide Quick Ask shortcut on or off to match Settings > App."""
+        if load_ui_config().get("quick_hotkey", True):
+            ok = self.hotkey.register()
+            if announce and not ok and self.window:
+                self.window.toast("Ctrl+Alt+Space is already used by another app, so the global shortcut is off. Quick Ask still opens with Ctrl+J in the app.", "warn")
+        else:
+            self.hotkey.unregister()
+
+    def _follow_system_theme(self) -> None:
+        if theme.preference() == "auto" and theme.system_theme() != theme.theme_name():
+            self.on_theme("auto")
 
     def on_theme(self, name: str) -> None:
         """Switch theme live by rebuilding the window (every widget picks up the new palette)."""
@@ -165,6 +186,7 @@ class Controller(QObject):
         self.connect(what) if isinstance(what, Connection) and what.mode == "remote" else self.start_local()
 
     def on_quit(self, stop_service: bool) -> None:
+        self.hotkey.unregister()
         if stop_service and self.api and self.api.conn.mode == "local":
             try:
                 self.api.call("POST", "/api/service/stop", json_body={}, timeout=5)
