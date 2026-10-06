@@ -15,6 +15,9 @@ Give a Bot a job, message it a task, and it gets on with it. It asks you only wh
 
 <img src="docs/screenshots/welcome.png" width="860" alt="OpenGrokBot welcome screen">
 
+<img src="docs/demo.gif" width="640" alt="Animated tour of OpenGrokBot 1.5: Files, daily digest, cost estimates, Quick Ask, backup and restore"><br>
+<sub>A 25-second tour of 1.5. The scenes are animated to look like the app, with sample content; they are not a screen recording.</sub>
+
 </div>
 
 > Independent open-source project inspired by the "team of always-on AI teammates" idea. Not affiliated with or endorsed by xAI or Cursor.
