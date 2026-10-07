@@ -849,6 +849,49 @@ def create_app(engine: Engine, token: str) -> FastAPI:
                 eng.events.unsubscribe(sid)
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
+    # ------------------------------------------------------------- knowledge base
+    @app.get("/api/knowledge", dependencies=[api])
+    def knowledge_list(bot_id: str | None = None) -> dict:
+        return {"sources": eng.knowledge.sources(bot_id), "stats": eng.knowledge.stats()}
+
+    @app.post("/api/knowledge/note", dependencies=[api])
+    def knowledge_note(body: dict = Body(...)) -> dict:
+        return eng.knowledge.add_text(str(body.get("name", "")), str(body.get("text", "")), str(body.get("bot_id", "") or ""))
+
+    @app.post("/api/knowledge/upload", dependencies=[api])
+    def knowledge_upload(body: dict = Body(...)) -> dict:
+        import base64
+        try:
+            data = base64.b64decode(str(body.get("data_b64", "")), validate=False)
+        except ValueError:
+            raise HTTPException(400, "The file data was not valid.")
+        return eng.knowledge.add_upload(str(body.get("filename", "document.txt")), data, str(body.get("bot_id", "") or ""))
+
+    @app.post("/api/knowledge/workspace", dependencies=[api])
+    def knowledge_workspace(body: dict = Body(...)) -> dict:
+        try:
+            added = eng.knowledge.add_workspace(eng.files, str(body.get("path", "")), str(body.get("bot_id", "") or ""))
+        except FileError as e:
+            raise HTTPException(400, str(e))
+        return {"added": added}
+
+    @app.post("/api/knowledge/refresh", dependencies=[api])
+    def knowledge_refresh() -> dict:
+        return {"changed": eng.knowledge.refresh(eng.files)}
+
+    @app.get("/api/knowledge/search", dependencies=[api])
+    def knowledge_search(q: str = "", bot_id: str | None = None, limit: int = 8) -> dict:
+        return {"hits": eng.knowledge.search(q, bot_id, limit)}
+
+    @app.get("/api/knowledge/{sid}", dependencies=[api])
+    def knowledge_read(sid: str, seq: int | None = None) -> dict:
+        return eng.knowledge.read(sid, seq)
+
+    @app.delete("/api/knowledge/{sid}", dependencies=[api])
+    def knowledge_delete(sid: str) -> dict:
+        eng.knowledge.remove(sid)
+        return {"ok": True}
+
     @app.get("/api/poll", dependencies=[api])
     def poll(after: int = 0) -> dict:
         evs = eng.events.since(after)

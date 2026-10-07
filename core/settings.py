@@ -29,6 +29,7 @@ DEFAULTS: dict[str, Any] = {
     "providers": PROVIDER_PRESETS,
     "default_profile": "anthropic",
     "reviewer": {"profile": "", "model": ""},
+    "fallback": {"profile": "", "model": ""},
     "approval": {"default_mode": "ask", "timeout_min": 1440, "routine_timeout_min": 120},
     "network": {"mode": "open", "allow": [], "deny": [], "block_private": True},
     "notifications": {"toast": True, "sound": True, "on_finish": True, "on_approval": True,

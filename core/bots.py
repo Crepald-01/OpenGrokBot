@@ -9,7 +9,7 @@ from .settings import Admin, Settings
 
 JSON_FIELDS = {"net_allow": [], "net_deny": [], "grants": []}
 EDITABLE = {"name", "emoji", "job", "instructions", "profile", "model", "approval_mode", "step_limit", "net_mode",
-            "net_allow", "net_deny", "grants", "proactive", "paused", "archived", "template", "daily_token_limit"}
+            "net_allow", "net_deny", "grants", "proactive", "paused", "archived", "template", "daily_token_limit", "fallback_profile", "fallback_model"}
 APPROVAL_MODES = ("ask", "auto_review")
 PROACTIVE_LEVELS = ("off", "suggest", "act")
 
@@ -32,6 +32,8 @@ class Bots:
         row["paused"] = bool(row["paused"])
         row["archived"] = bool(row["archived"])
         row["daily_token_limit"] = int(row.get("daily_token_limit") or 0)
+        row["fallback_profile"] = row.get("fallback_profile") or ""
+        row["fallback_model"] = row.get("fallback_model") or ""
         row["effective_approval_mode"] = self.effective_approval_mode(row)
         return row
 
@@ -125,8 +127,9 @@ class Bots:
         bot = self.create(new_name, job=src["job"], instructions=src["instructions"], emoji=src["emoji"], profile=src["profile"], model=src["model"],
                           approval_mode=src["approval_mode"], step_limit=src["step_limit"], net_mode=src["net_mode"], net_allow=src["net_allow"],
                           net_deny=src["net_deny"], proactive=src["proactive"], template=src["template"])
-        if src["daily_token_limit"]:
-            bot = self.update(bot["id"], daily_token_limit=src["daily_token_limit"])
+        extra = {k: src[k] for k in ("daily_token_limit", "fallback_profile", "fallback_model") if src.get(k)}
+        if extra:
+            bot = self.update(bot["id"], **extra)
         return bot
 
     def set_paused_all(self, paused: bool) -> int:

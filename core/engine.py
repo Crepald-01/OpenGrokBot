@@ -16,6 +16,7 @@ from .computer import Computer
 from .db import Database, new_id, now
 from .digest import Digest
 from .files import Files
+from .knowledge import Knowledge
 from .events import EventBus
 from .mcp import McpManager
 from .memory import Memory
@@ -69,6 +70,7 @@ class Engine:
         self.files = Files(self.computer.workspace)
         self.threads = Threads(self.db, self.events, self.bots.names, self.describe_tool)
         self.search = Search(self.db, self.bots.names)
+        self.knowledge = Knowledge(self.db)
         self.digest = Digest(self)
         self.updates = Updates(self.settings)
         self.mcp = McpManager(self.db, self.admin)

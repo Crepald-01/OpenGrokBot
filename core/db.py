@@ -98,11 +98,47 @@ CREATE TABLE IF NOT EXISTS notifications(
   read INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS known_logins(domain TEXT PRIMARY KEY, added_at REAL);
+CREATE TABLE IF NOT EXISTS knowledge_sources(
+  id TEXT PRIMARY KEY, name TEXT, kind TEXT DEFAULT 'text', path TEXT DEFAULT '', bot_id TEXT DEFAULT '',
+  size INTEGER DEFAULT 0, chunks INTEGER DEFAULT 0, mtime REAL DEFAULT 0, created_at REAL, updated_at REAL
+);
+CREATE TABLE IF NOT EXISTS knowledge_chunks(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT, seq INTEGER, text TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_kchunks_source ON knowledge_chunks(source_id, seq);
+CREATE TABLE IF NOT EXISTS triggers(
+  id TEXT PRIMARY KEY, name TEXT, kind TEXT, bot_id TEXT, prompt TEXT DEFAULT '', secret_hash TEXT DEFAULT '', secret_hint TEXT DEFAULT '',
+  folder TEXT DEFAULT '', pattern TEXT DEFAULT '*', enabled INTEGER DEFAULT 1, dry_run INTEGER DEFAULT 0, created_at REAL,
+  last_fired_at REAL DEFAULT 0, fired INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS trigger_runs(
+  id TEXT PRIMARY KEY, trigger_id TEXT, started_at REAL, ended_at REAL, status TEXT, detail TEXT DEFAULT '', result TEXT DEFAULT '', thread_id TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_trigger_runs ON trigger_runs(trigger_id, started_at);
+CREATE TABLE IF NOT EXISTS trigger_seen(trigger_id TEXT, path TEXT, mtime REAL, size INTEGER, PRIMARY KEY(trigger_id, path));
+CREATE TABLE IF NOT EXISTS workflows(
+  id TEXT PRIMARY KEY, name TEXT, description TEXT DEFAULT '', steps TEXT DEFAULT '[]', cron TEXT DEFAULT '', enabled INTEGER DEFAULT 1,
+  created_at REAL, updated_at REAL, last_run_at REAL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS workflow_runs(
+  id TEXT PRIMARY KEY, workflow_id TEXT, started_at REAL, ended_at REAL, status TEXT, input TEXT DEFAULT '', steps TEXT DEFAULT '[]',
+  result TEXT DEFAULT '', error TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_wruns ON workflow_runs(workflow_id, started_at);
+CREATE TABLE IF NOT EXISTS file_versions(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT, ts REAL, size INTEGER, sha TEXT, reason TEXT DEFAULT '', bot_id TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_fv_path ON file_versions(path, ts);
+CREATE TABLE IF NOT EXISTS api_tokens(
+  id TEXT PRIMARY KEY, name TEXT, prefix TEXT, hash TEXT, scope TEXT DEFAULT 'read', created_at REAL, expires_at REAL DEFAULT 0,
+  last_used_at REAL DEFAULT 0, revoked INTEGER DEFAULT 0
+);
 """
 
 
 # columns added after the first release: applied to existing databases when they are opened
-MIGRATIONS = [("bots", "daily_token_limit", "INTEGER DEFAULT 0")]
+MIGRATIONS = [("bots", "daily_token_limit", "INTEGER DEFAULT 0"),
+              ("bots", "fallback_profile", "TEXT DEFAULT ''"), ("bots", "fallback_model", "TEXT DEFAULT ''")]
 
 
 def new_id(n: int = 12) -> str:

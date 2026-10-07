@@ -548,4 +548,30 @@ def builtin_tools(eng: "Engine") -> list[ToolSpec]:
     add("browser_wait", "Wait for some seconds or until text appears on the page.", {"seconds": i("Seconds (max 30)"), "text": s("Text to wait for")}, [], b_wait, screen=True,
         label=lambda a: "Wait")
 
+    # ------------------------------------------------------------------ knowledge base
+    def knowledge_search(ctx: ToolContext, a: dict) -> ToolResult:
+        eng.knowledge.refresh(eng.files)   # pick up workspace files that changed since they were indexed
+        hits = eng.knowledge.search(a["query"], ctx.bot["id"], int(a.get("limit", 6) or 6))
+        if not hits:
+            return ToolResult(f"No passages in the knowledge base match '{a['query']}'. Try other words, or ask the user to add the document.")
+        lines = [f"[{h['name']} · passage {h['seq']} · id {h['source_id']}]\n{h['text'][:900]}" for h in hits]
+        return ToolResult(f"{len(hits)} passage(s) from the user's knowledge base for '{a['query']}':", data="\n\n---\n\n".join(lines), untrusted="the knowledge base")
+
+    add("knowledge_search", "Search the user's knowledge base (documents they added: notes, manuals, policies, reports). Returns the best matching passages with their source. "
+        "Use it before answering questions about the user's own material, and cite the source name.",
+        {"query": s("What to look for, in plain words"), "limit": i("How many passages, default 6")}, ["query"], knowledge_search, read_only=True,
+        label=lambda a: f"Search knowledge: {short(a.get('query', ''), 40)}")
+
+    def knowledge_read(ctx: ToolContext, a: dict) -> ToolResult:
+        src = eng.knowledge.find_source(str(a["source"]), ctx.bot["id"])
+        if not src:
+            return ToolResult(f"No knowledge source '{a['source']}'. Use knowledge_search to find one.", is_error=True)
+        r = eng.knowledge.read(src["id"], a.get("from_passage"))
+        more = f" (passage {r['from_seq']} onward; {r['passages']} in total, pass from_passage to read further)" if r["passages"] > 6 else ""
+        return ToolResult(f"{r['name']}{more}:", data=r["text"], untrusted=f"knowledge document {r['name']}")
+
+    add("knowledge_read", "Read a document from the knowledge base by name or id, starting at a passage number.",
+        {"source": s("Source name or id (from knowledge_search)"), "from_passage": i("Passage number to start at, default 0")}, ["source"], knowledge_read, read_only=True,
+        label=lambda a: f"Read knowledge: {short(a.get('source', ''), 40)}")
+
     return T

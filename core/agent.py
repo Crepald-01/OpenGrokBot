@@ -76,6 +76,8 @@ class AgentRun:
         self.started = time.time()
         self.result: TurnResult | None = None
         self._screen_held = False
+        self.active_provider = None
+        self._on_fallback = False
 
     # ----------------------------------------------------------------- status
     def set_status(self, status: str) -> None:
@@ -121,7 +123,13 @@ class AgentRun:
             if eng.usage.over_limit():
                 raise ProviderError("rate_limit", "Weekly usage limit reached. Raise it in Settings > Usage or wait for the weekly reset.")
             self._check_budget()
-            provider = make_provider(eng.settings, self.bot.get("profile") or None, self.bot.get("model") or None)
+            try:
+                provider = make_provider(eng.settings, self.bot.get("profile") or None, self.bot.get("model") or None)
+            except ProviderError as e:   # no key or no model for the primary: the backup model can still do the job
+                provider = self._fallback_for(None, e)
+                if provider is None:
+                    raise
+            self.active_provider = provider
             self.vision = provider.vision
             if self.task and self.trigger != "user":
                 eng.threads.add(self.thread_id, "system", "user", self.task, turn_id=self.id)
@@ -181,6 +189,7 @@ class AgentRun:
             history = self._maybe_compact(provider, sys_prompt, history)
             stream_id = f"{self.id}:{step}"
             result = self._call_model(provider, sys_prompt, history, list(specs.values()), stream_id)
+            provider = self.active_provider   # the backup model, if it had to take over (it then stays for the rest of this task)
             eng.usage.record(self.bot_id, self.id, provider.profile.get("id", ""), provider.model, result.input_tokens, result.output_tokens)
             text = result.text.strip()
             blocks = result.blocks()
@@ -231,7 +240,54 @@ class AgentRun:
         return res
 
     # ------------------------------------------------------------ model calls
+    FAILOVER_KINDS = ("rate_limit", "server", "network", "auth")
+
+    def _fallback_config(self) -> tuple[str, str]:
+        """The backup model for this Bot: its own, else the app-wide one. ("", "") when none is set."""
+        bot = self.engine.bots.get(self.bot_id) or self.bot
+        prof, model = bot.get("fallback_profile") or "", bot.get("fallback_model") or ""
+        if not prof and not model:
+            prof = self.engine.settings.get("fallback.profile", "") or ""
+            model = self.engine.settings.get("fallback.model", "") or ""
+        return prof, model
+
+    def _fallback_for(self, primary, err: ProviderError):
+        """A provider for the backup model when the primary failed in a way another model can survive (limits, outages, network, a bad key).
+        Returns None when there is no backup, it is the same model, or we are already on it."""
+        eng = self.engine
+        if self._on_fallback or err.kind not in self.FAILOVER_KINDS:
+            return None
+        prof, model = self._fallback_config()
+        if not prof and not model:
+            return None
+        try:
+            fb = make_provider(eng.settings, prof or None, model or None)
+        except ProviderError:
+            return None
+        if primary is not None and (fb.profile.get("id"), fb.model) == (primary.profile.get("id"), primary.model):
+            return None
+        self._on_fallback = True
+        why = {"rate_limit": "was rate limited", "server": "had an outage", "network": "could not be reached", "auth": "rejected the key"}[err.kind]
+        name = f"{fb.profile.get('label', fb.profile.get('id', ''))} · {fb.model}"
+        self.activity(f"The main model {why}. Switching to the backup: {name}.")
+        eng.threads.notice(self.thread_id, f"The main model {why}, so I switched to the backup model ({name}) to keep going.", "warn")
+        return fb
+
     def _call_model(self, provider, system: str, history: list[dict], specs: list[ToolSpec], stream_id: str):
+        try:
+            out = self._call_with_retries(provider, system, history, specs, stream_id)
+            self.active_provider = provider
+            return out
+        except ProviderError as e:
+            fb = self._fallback_for(provider, e)
+            if fb is None:
+                raise
+            self.active_provider = fb
+            self.vision = fb.vision
+            out = self._call_with_retries(fb, system, history, specs, stream_id)
+            return out
+
+    def _call_with_retries(self, provider, system: str, history: list[dict], specs: list[ToolSpec], stream_id: str):
         buf = _StreamBuf(self, stream_id)
         schemas = [t.schema() for t in specs]
         attempt = 0
@@ -246,6 +302,8 @@ class AgentRun:
             except ProviderError as e:
                 buf.reset()
                 max_try = RETRIES.get(e.kind, 0)
+                if not self._on_fallback and e.kind in self.FAILOVER_KINDS and any(self._fallback_config()):
+                    max_try = min(max_try, 1)   # a backup model is waiting: do not sit through a long retry cycle first
                 if attempt >= max_try:
                     raise
                 wait = min(e.retry_after or (2 ** (attempt + 1)), 90)
@@ -420,6 +478,10 @@ class AgentRun:
         if self.trigger in ("routine",):
             parts.append("# Unattended run\nThis is a scheduled routine. Nobody is watching live. Work end to end, avoid questions unless truly blocked, and finish with a short report.")
         parts.append(f"# Your memory\n{mem}")
+        kn = eng.knowledge.count_for(bot["id"])
+        if kn:
+            parts.append(f"# Knowledge base\nThe user added {kn} document{'s' if kn != 1 else ''} for you to draw on. Use knowledge_search before answering questions about their own "
+                         "material (policies, manuals, reports, notes) and cite the source name; use knowledge_read to read a whole document.")
         if follow:
             parts.append("# Follow-ups you scheduled\n" + "\n".join(f"- {f['note']}" for f in follow))
         parts.append("# Shared project notes (read with project_read)\n" + eng.memory.project_headlines())
