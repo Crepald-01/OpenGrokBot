@@ -13,11 +13,13 @@ from .apitokens import ApiTokens
 from .agent import AgentRun, TurnManager, run_reflection
 from .approvals import ApprovalManager
 from .bots import Bots
+from .channels import Channels
 from .computer import Computer
 from .db import Database, new_id, now
 from .digest import Digest
 from .filehistory import FileHistory
 from .files import Files
+from .insights import Insights
 from .knowledge import Knowledge
 from .events import EventBus
 from .mcp import McpManager
@@ -77,8 +79,10 @@ class Engine:
         self.threads = Threads(self.db, self.events, self.bots.names, self.describe_tool)
         self.search = Search(self.db, self.bots.names)
         self.knowledge = Knowledge(self.db)
+        self.channels = Channels(self.settings)
         self.apitokens = ApiTokens(self.db)
         self.digest = Digest(self)
+        self.insights = Insights(self)
         self.updates = Updates(self.settings)
         self.mcp = McpManager(self.db, self.admin)
         self.plugins = PluginManager(self)
@@ -201,6 +205,7 @@ class Engine:
             notifier.toast(title, body)
         if cfg.get("ntfy_url") and cfg.get("ntfy_topic") and (urgent or kind in ("approval", "question", "takeover", "login", "finished", "error", "routine", "digest")):
             notifier.ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], title, body, urgent)
+        self.channels.dispatch(kind, (bot or {}).get("name", ""), title, body, urgent)   # Slack, Discord, Telegram, email, webhooks
 
     def on_turn_end(self, run: AgentRun) -> None:
         res = run.result

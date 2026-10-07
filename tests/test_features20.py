@@ -600,6 +600,257 @@ class WorkflowTests(Base):
         self.assertEqual(self.c.delete(f"/api/workflows/{wid}", headers=self.h).status_code, 200)
 
 
+# ==================================================================================================== 7. insights
+class InsightsTests(Base):
+    def at(self, days_ago, hour):
+        from datetime import datetime, timedelta
+        d = datetime.now().replace(hour=hour, minute=0, second=0, microsecond=0) - timedelta(days=days_ago)
+        return d.timestamp()
+
+    def turn(self, bot, days_ago, hour, status, secs=60, steps=3, trigger="user"):
+        t = self.at(days_ago, hour)
+        self.eng.db.insert("turns", {"id": f"t{next(_N)}", "bot_id": bot["id"], "thread_id": "x", "trigger": trigger, "status": status, "started_at": t, "ended_at": t + secs, "steps": steps})
+
+    def test_numbers_add_up(self):
+        a, _ = self.new_bot("Alpha")
+        b, _ = self.new_bot("Beta")
+        for st, secs in (("done", 30), ("done", 90), ("error", 10)):
+            self.turn(a, 1, 9, st, secs)
+        self.turn(a, 3, 14, "done", 60, trigger="routine")
+        self.turn(b, 0, 9, "stopped", 20)
+        self.turn(a, 40, 9, "done")                                                  # outside the 7 and 30 day windows
+        self.eng.db.insert("turns", {"id": f"t{next(_N)}", "bot_id": a["id"], "thread_id": "x", "trigger": "user", "status": "running", "started_at": self.at(0, 8), "steps": 1})   # unfinished: not counted
+        self.eng.db.insert("usage", {"ts": self.at(1, 9), "bot_id": a["id"], "turn_id": "x", "profile": "p", "model": "m", "input_tokens": 700, "output_tokens": 100})
+        self.eng.db.insert("usage", {"ts": self.at(0, 10), "bot_id": b["id"], "turn_id": "x", "profile": "p", "model": "m", "input_tokens": 50, "output_tokens": 50})
+        for tool, status, ms in (("fs_read", "ok", 10), ("fs_read", "ok", 30), ("fs_read", "error", 20), ("browser_open", "ok", 400), ("fs_delete", "denied", 5)):
+            self.eng.actions.record(bot_id=a["id"], tool=tool, args="{}", result=f"{tool} {status} text", status=status, duration_ms=ms)
+        d = self.eng.insights.build(7)
+        t = d["totals"]
+        self.assertEqual((t["tasks"], t["ok"], t["problems"]), (6 - 1, 3, 2))
+        self.assertAlmostEqual(t["success"], 3 / 5)
+        self.assertEqual(t["tokens"], 900)
+        self.assertEqual(len(d["per_day"]), 7)
+        self.assertEqual([x["tasks"] for x in d["per_day"]][-2:], [3, 1])           # yesterday and today
+        self.assertEqual(d["per_day"][-1]["day"], time.strftime("%Y-%m-%d"))
+        self.assertEqual(d["hours"][9], 4)
+        self.assertEqual(d["hours"][14], 1)
+        self.assertEqual(t["busiest_hour"], 9)
+        self.assertEqual(d["triggers"], {"user": 4, "routine": 1})
+        by = {x["name"]: x for x in d["bots"]}
+        self.assertEqual((by["Alpha"]["tasks"], by["Alpha"]["problems"], by["Alpha"]["tokens"]), (4, 1, 800))
+        self.assertAlmostEqual(by["Alpha"]["success"], 3 / 4)
+        self.assertAlmostEqual(by["Alpha"]["avg_seconds"], (30 + 90 + 10 + 60) / 4)
+        self.assertEqual(by["Beta"]["tasks"], 1)
+        tools = {x["tool"]: x for x in d["tools"]}
+        self.assertEqual((tools["fs_read"]["n"], tools["fs_read"]["errors"], tools["fs_read"]["avg_ms"]), (3, 1, 20))
+        self.assertEqual(tools["fs_delete"]["denied"], 1)
+        self.assertEqual(d["tools"][0]["tool"], "fs_read")                           # most used first
+        self.assertEqual(d["problems"][0]["tool"], "fs_read")
+        self.assertEqual(d["problems"][0]["bot_name"], "Alpha")
+        self.assertEqual(self.eng.insights.build(30)["totals"]["tasks"], 5)
+        self.assertEqual(self.eng.insights.build(90)["totals"]["tasks"], 6)
+        self.assertEqual(self.eng.insights.build(12345)["days"], 7)                  # an unknown range falls back to 7 days
+        only_b = self.eng.insights.build(7, b["id"])
+        self.assertEqual((only_b["totals"]["tasks"], only_b["totals"]["tokens"]), (1, 100))
+
+    def test_an_empty_period_is_all_zeros_not_an_error(self):
+        d = self.eng.insights.build(7, "no-such-bot")
+        self.assertEqual(d["totals"]["tasks"], 0)
+        self.assertIsNone(d["totals"]["success"])
+        self.assertIsNone(d["totals"]["busiest_hour"])
+        self.assertEqual(d["hours"], [0] * 24)
+        self.assertEqual((d["bots"], d["tools"], d["problems"]), ([], [], []))
+
+    def test_api(self):
+        r = self.c.get("/api/insights", headers=self.h, params={"days": 30})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.json()["per_day"]), 30)
+
+
+# ==================================================================================================== 8. notification channels
+class Sink:
+    """A tiny local web server that records what is POSTed to it."""
+
+    def __init__(self, status=200):
+        self.hits = []
+        sink = self
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                n = int(self.headers.get("content-length", 0))
+                sink.hits.append({"path": self.path, "json": json.loads(self.rfile.read(n) or b"{}")})
+                self.send_response(sink.status)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        self.status = status
+        self.srv = HTTPServer(("127.0.0.1", 0), H)
+        self.url = f"http://127.0.0.1:{self.srv.server_port}"
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+class ChannelTests(Base):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from core import channels as ch
+        from core import secrets as sec
+        cls.store = {}
+        cls._saved = (sec.get_secret, sec.set_secret, sec.has_secret, sec.delete_secret, ch.TELEGRAM_API)
+        sec.get_secret = lambda n: cls.store.get(n)
+        sec.set_secret = lambda n, v: cls.store.__setitem__(n, v)
+        sec.has_secret = lambda n: n in cls.store
+        sec.delete_secret = lambda n: cls.store.pop(n, None)
+
+    @classmethod
+    def tearDownClass(cls):
+        from core import channels as ch
+        from core import secrets as sec
+        sec.get_secret, sec.set_secret, sec.has_secret, sec.delete_secret, ch.TELEGRAM_API = cls._saved
+        super().tearDownClass()
+
+    def setUp(self):
+        self.sink = Sink()
+        self.addCleanup(self.sink.close)
+        self.eng.settings.set("channels", [])
+        self.eng.settings.set("notifications", {"toast": False, "quiet_enabled": False, "dnd_until": 0})
+
+    def test_each_kind_sends_its_own_payload(self):
+        from core import channels as ch
+        ch.TELEGRAM_API = self.sink.url
+        chans = self.eng.channels
+        slack = chans.create("slack", "team", secret=self.sink.url + "/slack", events=["finished"])
+        discord = chans.create("discord", "dc", secret=self.sink.url + "/discord")
+        tg = chans.create("telegram", "tg", config={"chat_id": "42"}, secret="123:TOKEN")
+        hook = chans.create("webhook", "mine", secret=self.sink.url + "/hook")
+        for c in (slack, discord, tg, hook):
+            self.assertEqual(chans.test(c["id"]), {"ok": True})
+        by = {h["path"]: h["json"] for h in self.sink.hits}
+        self.assertIn("OpenGrokBot test", by["/slack"]["text"])
+        self.assertIn("OpenGrokBot test", by["/discord"]["content"])
+        self.assertEqual(by["/bot123:TOKEN/sendMessage"]["chat_id"], "42")
+        self.assertEqual((by["/hook"]["app"], by["/hook"]["kind"], by["/hook"]["title"]), ("OpenGrokBot", "test", "OpenGrokBot test"))
+        self.assertEqual(self.eng.channels.get(slack["id"])["last_status"], "ok")
+
+    def test_secrets_stay_out_of_settings_and_listings(self):
+        c = self.eng.channels.create("slack", "s", secret=self.sink.url + "/very-secret-path")
+        self.assertTrue(c["secret_set"])
+        self.assertNotIn("very-secret-path", json.dumps(self.eng.settings.get("channels")))
+        self.assertNotIn("very-secret-path", json.dumps(self.c.get("/api/channels", headers=self.h).json()))
+        self.eng.channels.delete(c["id"])
+        self.assertNotIn(f"channel:{c['id']}", self.store)                             # deleting a channel deletes its secret
+
+    def test_failures_are_reported_without_leaking_the_secret(self):
+        self.sink.status = 500
+        c = self.eng.channels.create("slack", "s", secret=self.sink.url + "/token-in-url")
+        r = self.eng.channels.test(c["id"])
+        self.assertEqual(r["ok"], False)
+        self.assertIn("500", r["error"])
+        gone = self.eng.channels.create("webhook", "dead", secret="http://127.0.0.1:9/never-listening-secret")
+        r2 = self.eng.channels.test(gone["id"])
+        self.assertFalse(r2["ok"])
+        self.assertNotIn("never-listening-secret", r2["error"])
+        self.assertEqual(self.eng.channels.get(gone["id"])["last_status"], "error")
+        self.assertNotIn("never-listening-secret", self.eng.channels.get(gone["id"])["last_error"])
+
+    def test_alerts_reach_only_channels_that_asked_for_them(self):
+        a = self.eng.channels.create("webhook", "only-finished", secret=self.sink.url + "/a", events=["finished"])
+        self.eng.channels.create("webhook", "only-errors", secret=self.sink.url + "/b", events=["error"])
+        off = self.eng.channels.create("webhook", "off", secret=self.sink.url + "/c", events=["finished"], enabled=False)
+        bot, _ = self.new_bot("Notifier")
+        self.eng.notify("finished", bot, "t", "Notifier finished", "all done")
+        wait_for(lambda: len(self.sink.hits) >= 1)
+        time.sleep(0.3)
+        self.assertEqual([h["path"] for h in self.sink.hits], ["/a"])
+        self.assertEqual((self.sink.hits[0]["json"]["title"], self.sink.hits[0]["json"]["bot"], self.sink.hits[0]["json"]["kind"]), ("Notifier finished", "Notifier", "finished"))
+        self.assertEqual(self.eng.channels.dispatch("digest", "", "x", "y"), 0)
+        self.assertEqual(self.eng.channels.get(off["id"])["last_status"], "")
+        self.assertEqual(self.eng.channels.get(a["id"])["last_status"], "ok")
+
+    def test_quiet_hours_silence_channels_too(self):
+        self.eng.channels.create("webhook", "w", secret=self.sink.url + "/q", events=["finished"])
+        self.eng.settings.set("notifications.dnd_until", time.time() + 600)
+        bot, _ = self.new_bot()
+        self.eng.notify("finished", bot, "t", "quiet", "shh")
+        time.sleep(0.4)
+        self.assertEqual(self.sink.hits, [])
+        self.eng.settings.set("notifications.dnd_until", 0)
+        self.eng.notify("finished", bot, "t", "loud", "hi")
+        self.assertTrue(wait_for(lambda: len(self.sink.hits) == 1))
+
+    def test_email_uses_starttls_login_and_sends(self):
+        import smtplib
+        sent = {}
+
+        class FakeSMTP:
+            def __init__(self, host, port, timeout=None, context=None):
+                sent["connect"] = (type(self).__name__, host, port)
+
+            def starttls(self, context=None):
+                sent["tls"] = True
+
+            def login(self, user, pw):
+                sent["login"] = (user, pw)
+
+            def send_message(self, msg):
+                sent["msg"] = (msg["Subject"], msg["From"], msg["To"], msg.get_content())
+
+            def quit(self):
+                sent["quit"] = True
+
+        class FakeSSL(FakeSMTP):
+            pass
+
+        orig = (smtplib.SMTP, smtplib.SMTP_SSL)
+        smtplib.SMTP, smtplib.SMTP_SSL = FakeSMTP, FakeSSL
+        try:
+            c = self.eng.channels.create("email", "mail", config={"host": "mail.example.com", "port": "587", "user": "me", "from": "bots@example.com", "to": "me@example.com"}, secret="hunter2")
+            self.assertEqual(self.eng.channels.test(c["id"]), {"ok": True})
+            self.assertEqual(sent["connect"], ("FakeSMTP", "mail.example.com", 587))
+            self.assertTrue(sent["tls"] and sent["quit"])
+            self.assertEqual(sent["login"], ("me", "hunter2"))
+            self.assertEqual(sent["msg"][:3], ("OpenGrokBot test", "bots@example.com", "me@example.com"))
+            ssl_c = self.eng.channels.create("email", "mail2", config={"host": "h", "port": "465", "from": "a@b.c", "to": "d@e.f", "security": "ssl"})
+            sent.clear()
+            self.assertTrue(self.eng.channels.test(ssl_c["id"])["ok"])
+            self.assertEqual(sent["connect"][0], "FakeSSL")
+            self.assertNotIn("tls", sent)
+            self.assertNotIn("login", sent)                                            # no user, no login
+        finally:
+            smtplib.SMTP, smtplib.SMTP_SSL = orig
+
+    def test_validation_update_and_api(self):
+        bad = [{"kind": "fax", "name": "x"}, {"kind": "slack", "secret": "not a url"}, {"kind": "slack"}, {"kind": "telegram", "secret": "t"},
+               {"kind": "email", "config": {"host": "h"}}, {"kind": "email", "config": {"host": "h", "from": "a@b.c", "to": "d@e.f", "port": "abc"}}]
+        for body in bad:
+            self.assertEqual(self.c.post("/api/channels", headers=self.h, json=body).status_code, 400, body)
+        r = self.c.post("/api/channels", headers=self.h, json={"kind": "discord", "name": "api", "secret": self.sink.url + "/one"})
+        self.assertEqual(r.status_code, 200, r.text)
+        cid = r.json()["id"]
+        self.assertEqual(r.json()["events"], ["approval", "question", "takeover", "error"])
+        up = self.c.put(f"/api/channels/{cid}", headers=self.h, json={"name": "renamed", "events": ["finished", "bogus"], "secret": self.sink.url + "/two", "enabled": False})
+        self.assertEqual((up.json()["name"], up.json()["events"], up.json()["enabled"]), ("renamed", ["finished"], False))
+        self.assertEqual(self.c.post(f"/api/channels/{cid}/test", headers=self.h).json(), {"ok": True})
+        self.assertEqual(self.sink.hits[-1]["path"], "/two")                           # the new secret replaced the old one
+        self.assertEqual(self.c.put("/api/channels/nope", headers=self.h, json={}).status_code, 400)
+        self.assertEqual(self.c.delete(f"/api/channels/{cid}", headers=self.h).status_code, 200)
+        listing = self.c.get("/api/channels", headers=self.h).json()
+        self.assertIn("slack", listing["kinds"])
+        self.assertIn("finished", listing["events"])
+        for _ in range(20):
+            try:
+                self.eng.channels.create("webhook", "n", secret=self.sink.url + "/x")
+            except ValueError:
+                break
+        self.assertLessEqual(len(self.eng.channels.list()), 20)
+
+
 # ==================================================================================================== 4. API tokens
 class ApiTokenTests(Base):
     def make(self, scope, name=None, days=0):

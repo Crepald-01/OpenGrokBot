@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from core import VERSION, apitokens, backup as backup_mod, commands, packages, paths, secrets, skills as skills_mod
+from core import VERSION, apitokens, channels as channels_mod, backup as backup_mod, commands, packages, paths, secrets, skills as skills_mod
 from core.browser import BrowserError
 from core.bots import BotError
 from core.computer import ComputerError
@@ -867,6 +867,31 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             finally:
                 eng.events.unsubscribe(sid)
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    @app.get("/api/channels", dependencies=[api])
+    def channels_list() -> dict:
+        return {"channels": eng.channels.list(), "kinds": channels_mod.KINDS, "events": list(channels_mod.EVENTS), "default_events": channels_mod.DEFAULT_EVENTS}
+
+    @app.post("/api/channels", dependencies=[api])
+    def channels_create(body: dict = Body(...)) -> dict:
+        return eng.channels.create(str(body.get("kind", "")), str(body.get("name", "")), body.get("config") or {}, body.get("secret"), body.get("events"), bool(body.get("enabled", True)))
+
+    @app.put("/api/channels/{cid}", dependencies=[api])
+    def channels_update(cid: str, body: dict = Body(...)) -> dict:
+        return eng.channels.update(cid, body.get("name"), body.get("config"), body.get("secret"), body.get("events"), body.get("enabled"))
+
+    @app.delete("/api/channels/{cid}", dependencies=[api])
+    def channels_delete(cid: str) -> dict:
+        eng.channels.delete(cid)
+        return {"ok": True}
+
+    @app.post("/api/channels/{cid}/test", dependencies=[api])
+    def channels_test(cid: str) -> dict:
+        return eng.channels.test(cid)
+
+    @app.get("/api/insights", dependencies=[api])
+    def insights(days: int = 7, bot_id: str | None = None) -> dict:
+        return eng.insights.build(days, bot_id)
 
     # --------------------------------------------------------------------- workflows
     @app.get("/api/workflows", dependencies=[api])
