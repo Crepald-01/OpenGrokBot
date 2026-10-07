@@ -381,11 +381,9 @@ class BotEditor(QDialog):
             self.mem.resizeRowsToContents()
             self.mem.blockSignals(False)
         self.api.get(f"/api/bots/{self.bot_id}/memory", ok)
-        try:
-            self.mem.cellChanged.disconnect()
-        except (TypeError, RuntimeError):
-            pass
-        self.mem.cellChanged.connect(self._mem_edited)
+        if not getattr(self, "_mem_hooked", False):   # connect once; disconnect() on an unconnected signal logs a warning
+            self.mem.cellChanged.connect(self._mem_edited)
+            self._mem_hooked = True
 
     def _mem_edited(self, row: int, col: int) -> None:
         if col != 1:

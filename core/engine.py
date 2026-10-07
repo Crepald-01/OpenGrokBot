@@ -105,7 +105,12 @@ class Engine:
         if not cfg.get("enabled"):
             return
         today = time.strftime("%Y-%m-%d")
-        if cfg.get("last_sent") == today or time.strftime("%H:%M") < str(cfg.get("time", "18:00")):
+        try:   # "9:00" must compare as 09:00, not as text
+            hh, mm = str(cfg.get("time", "18:00")).split(":")[:2]
+            at = f"{int(hh):02d}:{int(mm):02d}"
+        except ValueError:
+            at = "18:00"
+        if cfg.get("last_sent") == today or time.strftime("%H:%M") < at:
             return
         self.settings.set("digest.last_sent", today)
         d = self.digest.build("today")

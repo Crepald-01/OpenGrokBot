@@ -1,8 +1,8 @@
 ; Inno Setup script for OpenGrokBot. Build with:  python build_installer.py
-; (or compile directly:  ISCC.exe /DAppVersion=1.5.0 installer\OpenGrokBot.iss)
+; (or compile directly:  ISCC.exe /DAppVersion=1.6.0 installer\OpenGrokBot.iss)
 
 #ifndef AppVersion
-  #define AppVersion "1.5.0"
+  #define AppVersion "1.6.0"
 #endif
 #ifndef DistDir
   #define DistDir "..\dist\OpenGrokBot"

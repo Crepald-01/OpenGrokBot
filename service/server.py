@@ -185,7 +185,7 @@ def create_app(engine: Engine, token: str) -> FastAPI:
     @app.get("/api/bots/{bot_id}/export", dependencies=[api])
     def bots_export(bot_id: str, memory: bool = False) -> Response:
         data = packages.export_bot(eng, bot_id, include_memory=memory)
-        name = re.sub(r"[^\w\-]+", "_", (eng.bots.get(bot_id) or {}).get("name", "bot"))
+        name = re.sub(r"[^A-Za-z0-9\-]+", "_", (eng.bots.get(bot_id) or {}).get("name", "bot")).strip("_") or "bot"   # ASCII only: headers are Latin-1
         return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}.gbbot"'})
 
     @app.post("/api/bots/import", dependencies=[api])
@@ -322,7 +322,8 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             p, mime = eng.files.raw(path)
         except FileError as e:
             raise HTTPException(400, str(e))
-        return Response(p.read_bytes(), media_type=mime, headers={"Content-Disposition": f'attachment; filename="{p.name}"'})
+        # FileResponse streams from disk and encodes names outside Latin-1 (RFC 5987), which a hand-built header cannot
+        return FileResponse(p, media_type=mime, filename=p.name, content_disposition_type="attachment")
 
     @app.delete("/api/ws/file", dependencies=[api])
     def ws_delete(path: str) -> dict:
@@ -341,7 +342,7 @@ def create_app(engine: Engine, token: str) -> FastAPI:
         th = eng.threads.get(tid)
         if not th:
             raise HTTPException(404, "No such thread.")
-        name = re.sub(r"[^\w\-]+", "_", th.get("title") or "chat").strip("_")[:40] or "chat"
+        name = re.sub(r"[^A-Za-z0-9\-]+", "_", th.get("title") or "chat").strip("_")[:40] or "chat"
         return Response(eng.threads.export_markdown(tid).encode("utf-8"), media_type="text/markdown; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
 

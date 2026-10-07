@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QVBoxLayout
 
 from . import theme
@@ -94,7 +94,14 @@ class QuickAsk(QDialog):
         v.addWidget(self.err)
         self.bots.currentIndexChanged.connect(self._bot_changed)
 
-    def open(self, preferred_bot: str = "") -> None:
+    def present(self, preferred_bot: str = "") -> None:
+        """Show the box. (Not named open(): that would shadow QDialog.open.) Pressing the shortcut again while it is up
+        just brings it forward, instead of wiping what was typed."""
+        if self.isVisible():
+            self.raise_()
+            self.activateWindow()
+            self.text.setFocus()
+            return
         cfg = load_ui_config()
         want = preferred_bot or cfg.get("quick_bot", "")
         self.bots.blockSignals(True)
@@ -128,6 +135,7 @@ class QuickAsk(QDialog):
         return super().eventFilter(obj, e)
 
     def _fail(self, msg: str) -> None:
+        self.err.setStyleSheet(f"color: {theme.palette()['bad']};")
         self.err.setText(msg)
         self.err.show()
         self.send_btn.setEnabled(bool(self.store.bots))
@@ -154,4 +162,10 @@ class QuickAsk(QDialog):
         cfg["quick_bot"] = bot_id
         save_ui_config(cfg)
         self.sent.emit(f"Sent to {name}.")
-        self.close()
+        # the shortcut works from other apps, where the main window's toast is not on screen, so confirm here first
+        p = theme.palette()
+        self.err.setStyleSheet(f"color: {p['ok']};")
+        self.err.setText(f"Sent to {name} ✓")
+        self.err.show()
+        self.send_btn.setEnabled(False)
+        QTimer.singleShot(700, self.close)

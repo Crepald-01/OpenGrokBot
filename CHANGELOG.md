@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.6.0 (unreleased)
+
+Bug fixes and interface polish only. No new features.
+
+**Fixes**
+- **Workspace links.** A shortcut or link inside the workspace folder that points somewhere outside it made the Files page, recent files and search fail with a server error. Such links are now left out of the lists (and still cannot be opened or deleted), and Backup no longer includes files reached through a link.
+- **Crafted backups.** A hand-made backup zip with backslashes or drive letters in its entry names could have written files outside the restore folder on Windows. Restore now refuses those entries.
+- **Downloads with non-Latin names.** Saving a workspace file, exporting a Bot, or exporting a chat failed with a server error when the name contained Cyrillic, Chinese or other non-Latin letters. Export file names are now ASCII-safe, and workspace files stream straight from disk with the right encoded name.
+- **Digest.** Token counts just under a million read "1000.0k" and now read "1.0M". The Markdown digest now says "No Bot did anything in this period" when that is true. A digest time written without a leading zero ("9:00") compared as text and could send at the wrong time; it is now compared as a time.
+- **Update check.** "1.6" and "1.6.0" are now treated as the same version.
+- **Bot names.** Names are cut to 40 characters before the duplicate-name check, so two long names that only differ after character 40 can no longer both be created with the same stored name.
+- **Estimated cost.** Editing one price on a row that showed "free" in the other box was rejected as "not a number". "free" now counts as 0 there.
+- **Quick Ask.** Pressing the shortcut again while the box is open no longer wipes what you typed. After sending it now shows "Sent to <Bot>" before closing, because the main window's confirmation is not visible when you use the global shortcut from another app.
+- **Memory editor.** Removed a "Failed to disconnect" warning written to the log every time a Bot's memory tab was opened.
+
+**Interface polish**
+- Sidebar count badges are proper round pills again. They were stretched to the full row height, and were squeezed flat when the Bot list had a scrollbar. The scrollbar no longer sits on top of badges or the + button.
+- The Action log table now fills the window instead of leaving a wide empty area on the right.
+- Usage: the page scrolls on small windows, and the two tables are sized to their rows instead of hiding rows or leaving a blank gap.
+- Settings: long options such as "Closing the window keeps the app in the system tray" were cut off at the window edge. Each now has a short label with its detail in a wrapping line underneath.
+- Plugins: content lines up with the tabs and the page edge, and the scroll areas lost their extra frame.
+- Files: image files have a proper picture icon (they showed a sparkle), and list separators are spaced consistently.
+
 ## 1.5.0
 
 Five big features and five small ones. (There is no 1.4.)

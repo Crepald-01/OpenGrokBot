@@ -18,7 +18,9 @@ def parse(v: str) -> tuple[int, ...]:
 
 
 def is_newer(latest: str, current: str) -> bool:
-    return parse(latest) > parse(current)
+    a, b = parse(latest), parse(current)
+    n = max(len(a), len(b))
+    return a + (0,) * (n - len(a)) > b + (0,) * (n - len(b))   # "1.6" and "1.6.0" are the same version
 
 
 def _fetch() -> dict:

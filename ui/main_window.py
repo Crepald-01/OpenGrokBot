@@ -67,11 +67,19 @@ class SideRow(QFrame):
         self.sub.setVisible(bool(sub))
         col.addWidget(self.sub)
         h.addLayout(col, 1)
+        # long names give way (they are cut) before the count badge does: with a scrollbar showing, the row is narrower
+        # and the badge used to be squeezed flat on its right edge
+        self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.sub.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.badge = QLabel("")
         self.badge.setProperty("badge", True)
         self.badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.badge.setFixedHeight(18)   # as tall as its 9px corner radius makes a pill; it used to stretch to the whole row
+        self.badge.setMinimumWidth(18)
+        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge.hide()
-        h.addWidget(self.badge)
+        h.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def set_checked(self, on: bool) -> None:
         self.setProperty("checked", on)
@@ -622,6 +630,8 @@ class MainWindow(QMainWindow):
         self.lists.addLayout(self.groups_box)
         self.lists.addStretch(1)
         sc.setWidget(inner)
+        # leave room for the scrollbar only while it is showing, so it never sits on top of a badge or the + button
+        sc.verticalScrollBar().rangeChanged.connect(lambda lo, hi: self.lists.setContentsMargins(0, 4, 8 if hi > lo else 0, 4))
         v.addWidget(sc, 1)
 
         sep = QFrame()
@@ -798,7 +808,7 @@ class MainWindow(QMainWindow):
         if self._qa is None:
             self._qa = QuickAsk(self.api, self.store)
             self._qa.sent.connect(self.toast)
-        self._qa.open(self.chat.bot_id if self.current_key.startswith("bot:") else "")
+        self._qa.present(self.chat.bot_id if self.current_key.startswith("bot:") else "")
 
     def palette_entries(self) -> list[Entry]:
         out: list[Entry] = []

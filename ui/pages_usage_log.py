@@ -7,7 +7,7 @@ import time
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox, QProgressBar, QPushButton,
-                               QSpinBox, QSplitter, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
+                               QScrollArea, QSpinBox, QSplitter, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
 from . import theme
 from .api import Api
@@ -19,6 +19,12 @@ from .widgets import button, card, label, PageHeader, page_layout
 
 def fmt_tokens(n: int) -> str:
     return f"{n / 1_000_000:.2f}M" if n >= 1_000_000 else (f"{n / 1000:.1f}k" if n >= 1000 else str(n))
+
+
+def fit_height(t, min_rows: int = 2, max_rows: int = 8) -> None:
+    """Make a table exactly as tall as its rows (between min_rows and max_rows), so it neither hides rows nor leaves a blank gap."""
+    rows = min(max_rows, max(min_rows, t.rowCount()))
+    t.setFixedHeight(t.horizontalHeader().height() + t.verticalHeader().defaultSectionSize() * rows + 6)
 
 
 class DailyBars(QWidget):
@@ -52,7 +58,18 @@ class UsagePage(QWidget):
     def __init__(self, api: Api, store: Store):
         super().__init__()
         self.api, self.store = api, store
-        v = page_layout(self, PageHeader("Usage", "Tracked locally from the token counts your providers report. It resets weekly."))
+        outer = page_layout(self, PageHeader("Usage", "Tracked locally from the token counts your providers report. It resets weekly."))
+        # the page is taller than a small window, so it scrolls instead of squeezing the tables to a row or two
+        sc = QScrollArea()
+        sc.setWidgetResizable(True)
+        sc.setFrameShape(QFrame.Shape.NoFrame)
+        sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        v = QVBoxLayout(body)
+        v.setContentsMargins(0, 0, 10, 0)
+        v.setSpacing(16)
+        sc.setWidget(body)
+        outer.addWidget(sc, 1)
         top = QHBoxLayout()
         self.c_total = self._stat("This week", "0")
         self.c_in = self._stat("Input tokens", "0")
@@ -73,11 +90,10 @@ class UsagePage(QWidget):
         v.addWidget(self.daily)
         v.addWidget(label("BY BOT", eyebrow=True))
         self.table = make_table(["Bot", "Tasks", "Input", "Output", "Total", "Est. cost"], 0)
-        v.addWidget(self.table, 1)
+        v.addWidget(self.table)
         v.addWidget(label("BY MODEL AND PRICES (per million tokens). Enter what your provider charges; free and local models count as free.", eyebrow=True))
         self.prices = make_table(["Model", "Tokens in", "Tokens out", "Input price", "Output price", "Est. cost"], 0)
         self.prices.setEditTriggers(self.prices.EditTrigger.DoubleClicked | self.prices.EditTrigger.EditKeyPressed | self.prices.EditTrigger.AnyKeyPressed)
-        self.prices.setMaximumHeight(170)
         self.prices.itemChanged.connect(lambda _it: setattr(self, "_price_dirty", True))
         self._price_dirty = False
         v.addWidget(self.prices)
@@ -150,6 +166,7 @@ class UsagePage(QWidget):
                 bc = cost.get("per_bot", {}).get(r["bot_id"])
                 fill_row(self.table, [f"{r['emoji']} {r['name']}", r["turns"], fmt_tokens(r["input_tokens"] or 0), fmt_tokens(r["output_tokens"] or 0), fmt_tokens((r["input_tokens"] or 0) + (r["output_tokens"] or 0)),
                                       fmt_money(bc, cur) if bc is not None else "—"])
+            fit_height(self.table)
             if not self._price_dirty:
                 self._fill_prices(cost)
             if not self.limit.hasFocus():
@@ -176,6 +193,7 @@ class UsagePage(QWidget):
             for c in (0, 1, 2, 5):
                 it = self.prices.item(r, c)
                 it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        fit_height(self.prices)
         self.currency.blockSignals(True)
         self.currency.setText(cur)
         self.currency.blockSignals(False)
@@ -188,6 +206,8 @@ class UsagePage(QWidget):
             a, b = self.prices.item(r, 3).text().strip(), self.prices.item(r, 4).text().strip()
             if a.lower() == "free" and b.lower() == "free" or (not a and not b):
                 continue
+            # a row that shows "free" in one box and a number in the other: "free" means 0 there
+            a, b = ("0" if a.lower() == "free" else a), ("0" if b.lower() == "free" else b)
             try:
                 models[key] = {"in": float(a or 0), "out": float(b or 0)}
             except ValueError:
@@ -268,8 +288,6 @@ class LogPage(QWidget):
             self.table.setRowCount(0)
             for a in rows:
                 fill_row(self.table, [fmt_time(a["ts"]), self.store.bot_name(a["bot_id"]), a["tool"], a["status"], a["url"] or a["path"] or "", a["duration_ms"]], a)
-            self.table.resizeColumnsToContents()
-            self.table.horizontalHeader().setStretchLastSection(False)
         self.api.get("/api/actions", ok, params=params)
 
     def detail(self) -> None:

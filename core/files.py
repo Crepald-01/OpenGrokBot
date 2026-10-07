@@ -37,9 +37,23 @@ class Files:
         return p
 
     def rel(self, p: Path) -> str:
-        return p.resolve().relative_to(self.root).as_posix() if p.resolve() != self.root else ""
+        """Workspace-relative path with forward slashes. Uses the path as given (not its link target), so a link that
+        points outside the workspace does not break listings; `resolve()` is what refuses to open such a link."""
+        try:
+            return p.relative_to(self.root).as_posix() if p != self.root else ""
+        except ValueError:
+            return p.resolve().relative_to(self.root).as_posix() if p.resolve() != self.root else ""
+
+    def _inside(self, p: Path) -> bool:
+        try:
+            r = p.resolve()
+        except OSError:
+            return False
+        return r == self.root or self.root in r.parents
 
     def _entry(self, p: Path) -> dict:
+        if not self._inside(p):
+            raise OSError("points outside the workspace")
         st = p.stat()
         d = p.is_dir()
         return {"name": p.name, "path": self.rel(p), "dir": d, "size": 0 if d else st.st_size, "mtime": st.st_mtime, "kind": "dir" if d else kind_of(p)}
@@ -104,6 +118,8 @@ class Files:
         n = total = 0
         for f in self._walk():
             try:
+                if not self._inside(f):
+                    continue
                 total += f.stat().st_size
                 n += 1
             except OSError:

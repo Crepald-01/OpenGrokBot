@@ -36,7 +36,7 @@ def pending_dir() -> Path:
 
 def _files_under(root: Path):
     for p in sorted(root.rglob("*")):
-        if p.is_file():
+        if p.is_file() and not p.is_symlink():   # a link could point at a file outside the folder being backed up
             yield p
 
 
@@ -67,6 +67,10 @@ def create(eng: "Engine", include_workspace: bool = False) -> bytes:
 
 
 def _safe(name: str) -> PurePosixPath | None:
+    """A zip entry name that stays inside its folder. Backslashes and drive letters are refused outright: on Windows they
+    are path separators, so "skills\\..\\..\\x" would otherwise climb out of the pending folder."""
+    if "\\" in name or ":" in name or "\0" in name:
+        return None
     p = PurePosixPath(name)
     if p.is_absolute() or ".." in p.parts or not p.parts:
         return None
@@ -115,6 +119,8 @@ def stage_restore(data: bytes) -> dict:
                     if rel is None:
                         continue
                     target = out / Path(*rel.parts)
+                    if out.resolve() not in target.resolve().parents:
+                        continue
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(z.read(name))
                     if counter == "skills":

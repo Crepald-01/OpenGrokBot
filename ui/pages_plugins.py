@@ -153,11 +153,14 @@ class PluginsPage(QWidget):
         self.conn_box = QWidget()
         self.conn_l = QVBoxLayout(self.conn_box)
         self.conn_l.setSpacing(10)
+        self.conn_l.setContentsMargins(0, 0, 10, 0)   # room for the scrollbar, so cards line up with the tabs above
         sc = QScrollArea()
         sc.setWidgetResizable(True)
+        sc.setFrameShape(QFrame.Shape.NoFrame)
         sc.setWidget(self.conn_box)
         w = QWidget()
         wl = QVBoxLayout(w)
+        wl.setContentsMargins(0, 12, 0, 0)   # the tab pages otherwise inset their content by 9px, off the page's left edge
         bar = QHBoxLayout()
         bar.addWidget(button("Add REST connector…", on=self.add_rest))
         bar.addStretch(1)
@@ -167,6 +170,7 @@ class PluginsPage(QWidget):
 
         self.market = QWidget()
         mv = QVBoxLayout(self.market)
+        mv.setContentsMargins(0, 12, 0, 0)
         inst = QHBoxLayout()
         self.source = QLineEdit()
         self.source.setPlaceholderText("Install from a local folder or a git URL (https://github.com/you/your-plugin.git)")
@@ -176,8 +180,10 @@ class PluginsPage(QWidget):
         mv.addLayout(inst)
         self.market_l = QVBoxLayout()
         self.market_l.setSpacing(10)
+        self.market_l.setContentsMargins(0, 0, 10, 0)
         msc = QScrollArea()
         msc.setWidgetResizable(True)
+        msc.setFrameShape(QFrame.Shape.NoFrame)
         mw = QWidget()
         mw.setLayout(self.market_l)
         msc.setWidget(mw)
@@ -186,6 +192,7 @@ class PluginsPage(QWidget):
 
         mcp = QWidget()
         cv = QVBoxLayout(mcp)
+        cv.setContentsMargins(0, 12, 0, 0)
         cb = QHBoxLayout()
         cb.addWidget(button("Add server…", primary=True, on=lambda: self.edit_mcp(None)))
         cb.addWidget(button("Paste JSON config…", on=self.paste_mcp))

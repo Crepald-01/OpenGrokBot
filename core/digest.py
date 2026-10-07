@@ -17,7 +17,8 @@ SPECS = ("today", "yesterday", "24h", "week")
 
 def tokens(n: int) -> str:
     n = int(n or 0)
-    return f"{n / 1_000_000:.1f}M" if n >= 1_000_000 else f"{n / 1000:.1f}k" if n >= 1000 else str(n)
+    # 999_950 would round to "1000.0k", so the switch to M happens where the rounded value reaches 1000
+    return f"{n / 1_000_000:.1f}M" if n >= 999_950 else f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
 def domain(url: str) -> str:
@@ -44,7 +45,8 @@ class Digest:
 
     def build(self, spec: str = "today") -> dict:
         db = self.eng.db
-        start, end, label = self.window(spec if spec in SPECS else "today")
+        spec = spec if spec in SPECS else "today"
+        start, end, label = self.window(spec)
         bots_out, quiet = [], []
         total = Counter()
         for b in self.eng.bots.list():
@@ -105,6 +107,6 @@ class Digest:
             lines.append("**Quiet:** " + ", ".join(d["quiet"]))
         if d["waiting"]:
             lines.append(f"**Waiting for you:** {d['waiting']} approval{'s' if d['waiting'] != 1 else ''} in the Inbox.")
-        if t.get("tokens") is not None and not d["bots"]:
+        if not d["bots"]:
             lines.append("No Bot did anything in this period.")
         return "\n".join(lines).strip() + "\n"

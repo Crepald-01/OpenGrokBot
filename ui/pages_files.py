@@ -24,7 +24,7 @@ def ago(ts: float) -> str:
     return "just now" if d < 90 else f"{int(d // 60)} min ago" if d < 3600 else f"{int(d // 3600)} h ago" if d < 86400 else time.strftime("%b %d", time.localtime(ts))
 
 
-ICON_FOR = {"dir": "folder", "text": "file", "image": "sparkle", "other": "file"}
+ICON_FOR = {"dir": "folder", "text": "file", "image": "image", "other": "file"}
 
 
 class FilesPage(QWidget):
@@ -162,7 +162,7 @@ class FilesPage(QWidget):
         for e in entries:
             where = e["path"].rsplit("/", 1)[0] if "/" in e["path"] and self.mode != "browse" else ""
             sub = "Folder" if e["dir"] else f"{human_size(e['size'])} · {ago(e['mtime'])}"
-            it = QListWidgetItem(icons.icon(ICON_FOR.get(e["kind"], "file"), p["accent"] if e["dir"] else p["muted"], 18), f"{e['name']}\n{(where + '  ·  ') if where else ''}{sub}")
+            it = QListWidgetItem(icons.icon(ICON_FOR.get(e["kind"], "file"), p["accent"] if e["dir"] else p["muted"], 18), f"{e['name']}\n{(where + ' · ') if where else ''}{sub}")
             it.setData(Qt.ItemDataRole.UserRole, e)
             self.list.addItem(it)
         self.list.blockSignals(False)

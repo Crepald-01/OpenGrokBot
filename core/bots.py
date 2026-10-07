@@ -63,7 +63,7 @@ class Bots:
         return [self._out(r) for r in rows]  # type: ignore
 
     def create(self, name: str, job: str = "", instructions: str = "", emoji: str = "🤖", **opts: Any) -> dict:
-        name = (name or "").strip()
+        name = (name or "").strip()[:40]   # the stored name is cut to 40, so uniqueness is checked on what is stored
         if not name:
             raise BotError("A Bot needs a name.")
         if self.get_by_name(name):

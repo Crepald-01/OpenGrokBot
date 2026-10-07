@@ -24,7 +24,7 @@ if OUT:
 
 import uvicorn  # noqa: E402
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QLabel, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QLabel, QMessageBox  # noqa: E402
 
 from core import backup, paths  # noqa: E402
 from core.engine import Engine  # noqa: E402
@@ -286,6 +286,30 @@ theme.set_theme("auto")
 check(theme.theme_name() == "dark", "auto falls back to dark when Windows cannot say")
 theme._apps_use_light = orig                # type: ignore[assignment]
 theme.set_theme("dark")
+
+# ---- 8. 1.6 fixes ---------------------------------------------------------------------------------------------------------------
+win.quick_ask()
+pump(0.3)
+win._qa.text.setPlainText("half-written thought")
+win.quick_ask()                                         # pressing the shortcut again must not wipe the draft
+pump(0.2)
+check(win._qa.text.toPlainText() == "half-written thought", "Quick Ask keeps the draft when the shortcut is pressed again")
+win._qa.close()
+check(not hasattr(win._qa, "open") or type(win._qa).open is QDialog.open, "Quick Ask no longer shadows QDialog.open")
+from ui.main_window import SideRow  # noqa: E402
+row = next(r for r in win.rows.values() if isinstance(r, SideRow))
+row.set_badge(3)
+pump(0.3)
+check(row.badge.height() == 18, f"the sidebar count badge is a pill, not a full-height slab (h={row.badge.height()})")
+win.select("page:usage")
+pump(1.5)
+up = win.pages["usage"]
+check(up.table.height() >= up.table.horizontalHeader().height() + 2 * up.table.verticalHeader().defaultSectionSize(), "Usage tables are sized to their rows")
+from ui.pages_settings import SettingsPage  # noqa: E402
+sp = win.pages["settings"]
+sp.a_tray.parentWidget()
+check(sp.a_tray.parentWidget() is not sp and any("background service" in lb.text() for lb in sp.a_tray.parentWidget().findChildren(QLabel)),
+      "long Settings options keep their detail in a wrapping hint instead of a cut-off checkbox")
 
 print("FAIL: " + "; ".join(fails) if fails else "ALL OK")
 sys.stdout.flush()
