@@ -27,6 +27,7 @@ from core.providers import ProviderError, make_provider
 from core.routines import PRESETS
 from core.secrets import SecretStoreError
 from core.settings import PROVIDER_PRESETS
+from core.triggers import TriggerError
 from core.templates import TEMPLATES
 
 SECRET_PREFIXES = ("provider:", "plugin:", "mcp:", "ntfy:")
@@ -866,6 +867,62 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             finally:
                 eng.events.unsubscribe(sid)
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    # ---------------------------------------------------------------------- triggers
+    @app.get("/api/triggers", dependencies=[api])
+    def triggers_list() -> dict:
+        return {"triggers": eng.triggers.list(), "runs": eng.triggers.runs(limit=30)}
+
+    @app.post("/api/triggers", dependencies=[api])
+    def triggers_create(body: dict = Body(...)) -> dict:
+        return eng.triggers.create(str(body.get("kind", "webhook")), str(body.get("name", "")), str(body.get("bot_id", "")), str(body.get("prompt", "")),
+                                   str(body.get("folder", "")), str(body.get("pattern", "*") or "*"), bool(body.get("dry_run")))
+
+    @app.put("/api/triggers/{tid}", dependencies=[api])
+    def triggers_update(tid: str, body: dict = Body(...)) -> dict:
+        return eng.triggers.update(tid, **{k: body.get(k) for k in ("name", "bot_id", "prompt", "pattern", "enabled", "dry_run") if k in body})
+
+    @app.post("/api/triggers/{tid}/regenerate", dependencies=[api])
+    def triggers_regenerate(tid: str) -> dict:
+        return eng.triggers.regenerate(tid)
+
+    @app.post("/api/triggers/{tid}/test", dependencies=[api])
+    def triggers_test(tid: str, body: dict = Body(default={})) -> dict:
+        return eng.triggers.fire_test(tid, str(body.get("payload", "")))
+
+    @app.get("/api/triggers/{tid}/runs", dependencies=[api])
+    def triggers_runs(tid: str) -> dict:
+        return {"runs": eng.triggers.runs(tid)}
+
+    @app.delete("/api/triggers/{tid}", dependencies=[api])
+    def triggers_delete(tid: str) -> dict:
+        eng.triggers.delete(tid)
+        return {"ok": True}
+
+    @app.post("/hooks/{tid}/{secret}")
+    async def webhook(tid: str, secret: str, request: Request) -> JSONResponse:
+        """The public address of a webhook trigger: no access token, the secret in the address is the credential."""
+        ip = request.client.host if request.client else "?"
+        now_t = time.time()
+        recent = [t for t in fails.get(ip, []) if now_t - t < 300]
+        fails[ip] = recent
+        if len(recent) >= 10:
+            return JSONResponse({"error": "Too many failed attempts. Wait a few minutes."}, status_code=429)
+        try:
+            if int(request.headers.get("content-length") or 0) > 64 * 1024:
+                return JSONResponse({"error": "That request is too large (the limit is 64 KB)."}, status_code=413)
+            body = b""
+            async for chunk in request.stream():
+                body += chunk
+                if len(body) > 64 * 1024 + 1:
+                    return JSONResponse({"error": "That request is too large (the limit is 64 KB)."}, status_code=413)
+            out = eng.triggers.fire_webhook(tid, secret, body, request.headers.get("content-type", ""))
+        except PermissionError:
+            fails[ip].append(now_t)
+            return JSONResponse({"error": "Not found."}, status_code=404)
+        except TriggerError as e:
+            return JSONResponse({"error": str(e)}, status_code=e.status)
+        return JSONResponse({"ok": True, **out}, status_code=202)
 
     # ------------------------------------------------------------------ API tokens
     @app.get("/api/tokens", dependencies=[api])

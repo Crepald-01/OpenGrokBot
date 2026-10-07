@@ -60,14 +60,14 @@ class _StreamBuf:
 
 
 class AgentRun:
-    def __init__(self, engine: "Engine", bot_id: str, thread_id: str, trigger: str, task: str | None, dry_run: bool):
+    def __init__(self, engine: "Engine", bot_id: str, thread_id: str, trigger: str, task: str | None, dry_run: bool, tainted: bool = False):
         self.engine = engine
         self.bot_id, self.thread_id, self.trigger, self.task, self.dry_run = bot_id, thread_id, trigger, task, dry_run
         self.bot: dict = engine.bots.get(bot_id)  # type: ignore[assignment]
         self.id = new_id()
         self.stop = threading.Event()
         self.done = threading.Event()
-        self.tainted = False
+        self.tainted = tainted   # True from the start when the task itself carries outside data that looks like an attack
         self.vision = True
         self.status = "queued"
         self.steps = 0
@@ -518,7 +518,7 @@ class TurnManager:
         with self._lock:
             return self._screen_locks.setdefault(bot_id, threading.Lock())
 
-    def start(self, bot_id: str, thread_id: str, trigger: str = "user", task: str | None = None, dry_run: bool = False) -> AgentRun | None:
+    def start(self, bot_id: str, thread_id: str, trigger: str = "user", task: str | None = None, dry_run: bool = False, tainted: bool = False) -> AgentRun | None:
         eng = self.engine
         bot = eng.bots.get(bot_id)
         if not bot or bot["archived"]:
@@ -537,7 +537,7 @@ class TurnManager:
             for r in self.runs.values():
                 if r.bot_id == bot_id and r.thread_id == thread_id and not r.done.is_set():
                     return r   # already working here; it will pick up new messages mid-turn
-            run = AgentRun(eng, bot_id, thread_id, trigger, task, dry_run)
+            run = AgentRun(eng, bot_id, thread_id, trigger, task, dry_run, tainted)
             self.runs[run.id] = run
         threading.Thread(target=self._main, args=(run,), name=f"turn-{bot['name']}-{run.id[:4]}", daemon=True).start()
         return run
@@ -562,8 +562,8 @@ class TurnManager:
         except Exception as e:  # noqa: BLE001
             eng.log.error("on_turn_end failed: %s", e)
 
-    def run_sync(self, bot_id: str, thread_id: str, task: str, trigger: str = "routine", dry_run: bool = False) -> TurnResult:
-        run = self.start(bot_id, thread_id, trigger, task, dry_run)
+    def run_sync(self, bot_id: str, thread_id: str, task: str, trigger: str = "routine", dry_run: bool = False, tainted: bool = False) -> TurnResult:
+        run = self.start(bot_id, thread_id, trigger, task, dry_run, tainted)
         if run is None:
             return TurnResult("", "skipped", error="Bot is paused, archived or over its usage limit.")
         run.done.wait()

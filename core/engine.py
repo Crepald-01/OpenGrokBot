@@ -32,6 +32,7 @@ from .skills import Skills
 from .templates import TEAM_PRESET, template as get_template
 from .threads import Threads
 from .tooling import ToolSpec
+from .triggers import Triggers
 from .tools_builtin import builtin_tools
 from .updates import Updates
 from .usage import Usage
@@ -83,6 +84,7 @@ class Engine:
         self.messaging = Messaging(self)
         self.turns = TurnManager(self)
         self.routines = Routines(self)
+        self.triggers = Triggers(self)
         self.builtin: list[ToolSpec] = builtin_tools(self)
         self._labels = {t.name: t.label for t in self.builtin if t.label}
         self.base_url = "http://127.0.0.1:8765"
@@ -99,6 +101,7 @@ class Engine:
         s.add_job(self.messaging.nudge_stalled, "interval", minutes=15, id="_nudge", replace_existing=True)
         s.add_job(self.messaging.proactive_tick, "interval", minutes=10, id="_proactive", replace_existing=True)
         s.add_job(self._digest_tick, "interval", minutes=1, id="_digest", replace_existing=True)
+        s.add_job(self.triggers.tick, "interval", seconds=10, id="_triggers", replace_existing=True)
         self.log.info("Engine started (v%s). Data dir: %s", VERSION, paths.data_dir())
 
     def start_background_checks(self) -> None:
