@@ -138,7 +138,8 @@ CREATE TABLE IF NOT EXISTS api_tokens(
 
 # columns added after the first release: applied to existing databases when they are opened
 MIGRATIONS = [("bots", "daily_token_limit", "INTEGER DEFAULT 0"),
-              ("bots", "fallback_profile", "TEXT DEFAULT ''"), ("bots", "fallback_model", "TEXT DEFAULT ''")]
+              ("bots", "fallback_profile", "TEXT DEFAULT ''"), ("bots", "fallback_model", "TEXT DEFAULT ''"),
+              ("triggers", "workflow_id", "TEXT DEFAULT ''")]
 
 
 def new_id(n: int = 12) -> str:

@@ -868,6 +868,36 @@ def create_app(engine: Engine, token: str) -> FastAPI:
                 eng.events.unsubscribe(sid)
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
+    # --------------------------------------------------------------------- workflows
+    @app.get("/api/workflows", dependencies=[api])
+    def workflows_list() -> dict:
+        return {"workflows": eng.workflows.list(), "runs": eng.workflows.runs(limit=30)}
+
+    @app.post("/api/workflows", dependencies=[api])
+    def workflows_create(body: dict = Body(...)) -> dict:
+        return eng.workflows.create(str(body.get("name", "")), body.get("steps") or [], str(body.get("description", "")), str(body.get("cron", "")), bool(body.get("enabled", True)))
+
+    @app.put("/api/workflows/{wid}", dependencies=[api])
+    def workflows_update(wid: str, body: dict = Body(...)) -> dict:
+        return eng.workflows.update(wid, **{k: body.get(k) for k in ("name", "description", "steps", "cron", "enabled") if k in body})
+
+    @app.delete("/api/workflows/{wid}", dependencies=[api])
+    def workflows_delete(wid: str) -> dict:
+        eng.workflows.delete(wid)
+        return {"ok": True}
+
+    @app.post("/api/workflows/{wid}/run", dependencies=[api])
+    def workflows_run(wid: str, body: dict = Body(default={})) -> dict:
+        return eng.workflows.run(wid, str(body.get("input", "")), bool(body.get("dry_run")))
+
+    @app.post("/api/workflows/{wid}/stop", dependencies=[api])
+    def workflows_stop(wid: str) -> dict:
+        return {"stopped": eng.workflows.stop(wid)}
+
+    @app.get("/api/workflows/{wid}/runs", dependencies=[api])
+    def workflows_runs(wid: str) -> dict:
+        return {"runs": eng.workflows.runs(wid)}
+
     # ---------------------------------------------------------------------- triggers
     @app.get("/api/triggers", dependencies=[api])
     def triggers_list() -> dict:
@@ -876,7 +906,7 @@ def create_app(engine: Engine, token: str) -> FastAPI:
     @app.post("/api/triggers", dependencies=[api])
     def triggers_create(body: dict = Body(...)) -> dict:
         return eng.triggers.create(str(body.get("kind", "webhook")), str(body.get("name", "")), str(body.get("bot_id", "")), str(body.get("prompt", "")),
-                                   str(body.get("folder", "")), str(body.get("pattern", "*") or "*"), bool(body.get("dry_run")))
+                                   str(body.get("folder", "")), str(body.get("pattern", "*") or "*"), bool(body.get("dry_run")), str(body.get("workflow_id", "") or ""))
 
     @app.put("/api/triggers/{tid}", dependencies=[api])
     def triggers_update(tid: str, body: dict = Body(...)) -> dict:

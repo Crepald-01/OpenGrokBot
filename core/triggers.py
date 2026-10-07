@@ -118,8 +118,12 @@ class Triggers:
     def _out(self, r: dict) -> dict:
         r = {k: v for k, v in r.items() if k != "secret_hash"}
         r["enabled"], r["dry_run"] = bool(r["enabled"]), bool(r["dry_run"])
-        bot = self.engine.bots.get(r["bot_id"])
-        r["bot_name"] = bot["name"] if bot else "(deleted)"
+        if r.get("workflow_id"):
+            wf = self.engine.workflows.get(r["workflow_id"])
+            r["bot_name"] = ("Workflow: " + wf["name"]) if wf else "(deleted workflow)"
+        else:
+            bot = self.engine.bots.get(r["bot_id"])
+            r["bot_name"] = bot["name"] if bot else "(deleted)"
         r["running"] = r["id"] in self.running
         r["path"] = f"/hooks/{r['id']}/…{r['secret_hint']}" if r["kind"] == "webhook" else ""
         last = self.db.one("SELECT status, detail FROM trigger_runs WHERE trigger_id=? ORDER BY started_at DESC LIMIT 1", (r["id"],))
@@ -133,12 +137,15 @@ class Triggers:
         r = self.db.one("SELECT * FROM triggers WHERE id=?", (tid,))
         return self._out(r) if r else None
 
-    def _check(self, kind: str, bot_id: str, prompt: str, folder: str, pattern: str) -> str:
+    def _check(self, kind: str, bot_id: str, prompt: str, folder: str, pattern: str, workflow_id: str = "") -> str:
         if kind not in KINDS:
             raise TriggerError("A trigger is a webhook or a folder watch.")
-        if not self.engine.bots.get(bot_id):
-            raise TriggerError("Choose a Bot for the trigger to run.")
-        if not (prompt or "").strip():
+        if workflow_id:
+            if not self.engine.workflows.get(workflow_id):
+                raise TriggerError("Choose an existing workflow for the trigger to run.")
+        elif not self.engine.bots.get(bot_id):
+            raise TriggerError("Choose a Bot (or a workflow) for the trigger to run.")
+        elif not (prompt or "").strip():
             raise TriggerError("Write what the Bot should do when this fires.")
         if kind == "folder":
             try:
@@ -150,15 +157,15 @@ class Triggers:
             return (pattern or "*").strip() or "*"
         return "*"
 
-    def create(self, kind: str, name: str, bot_id: str, prompt: str, folder: str = "", pattern: str = "*", dry_run: bool = False) -> dict:
+    def create(self, kind: str, name: str, bot_id: str, prompt: str, folder: str = "", pattern: str = "*", dry_run: bool = False, workflow_id: str = "") -> dict:
         if int(self.db.scalar("SELECT COUNT(*) FROM triggers", (), 0)) >= MAX_TRIGGERS:
             raise TriggerError(f"There are already {MAX_TRIGGERS} triggers.")
-        pattern = self._check(kind, bot_id, prompt, folder, pattern)
+        pattern = self._check(kind, bot_id, prompt, folder, pattern, workflow_id)
         tid = new_id()
         secret = pysecrets.token_urlsafe(24) if kind == "webhook" else ""
         folder_rel = self.engine.files.rel(self.engine.files.resolve(folder)) if kind == "folder" else ""
-        self.db.insert("triggers", {"id": tid, "name": (name or "").strip()[:60] or ("Webhook" if kind == "webhook" else "Folder watch"), "kind": kind, "bot_id": bot_id,
-                                    "prompt": prompt.strip(), "secret_hash": _hash(secret) if secret else "", "secret_hint": secret[-4:] if secret else "",
+        self.db.insert("triggers", {"id": tid, "name": (name or "").strip()[:60] or ("Webhook" if kind == "webhook" else "Folder watch"), "kind": kind, "bot_id": "" if workflow_id else bot_id, "workflow_id": workflow_id or "",
+                                    "prompt": (prompt or "").strip(), "secret_hash": _hash(secret) if secret else "", "secret_hint": secret[-4:] if secret else "",
                                     "folder": folder_rel, "pattern": pattern, "dry_run": int(dry_run), "created_at": now()})
         if kind == "folder":
             self._seed(tid)   # files already there do not fire: only what appears from now on
@@ -177,7 +184,7 @@ class Triggers:
         for k in ("name", "bot_id", "prompt", "pattern", "enabled", "dry_run"):
             if k in f and f[k] is not None:
                 patch[k] = int(f[k]) if k in ("enabled", "dry_run") else f[k]
-        self._check(cur["kind"], patch.get("bot_id", cur["bot_id"]), patch.get("prompt", cur["prompt"]), cur["folder"], patch.get("pattern", cur["pattern"]))
+        self._check(cur["kind"], patch.get("bot_id", cur["bot_id"]), patch.get("prompt", cur["prompt"]), cur["folder"], patch.get("pattern", cur["pattern"]), cur.get("workflow_id", ""))
         if "name" in patch:
             patch["name"] = str(patch["name"]).strip()[:60] or cur["name"]
         if patch:
@@ -304,8 +311,15 @@ class Triggers:
         eng = self.engine
         status, result, thread_id, detail = "ok", "", "", None
         try:
-            bot = eng.bots.get(row["bot_id"])
-            if not bot or bot["archived"]:
+            bot = eng.bots.get(row["bot_id"]) if row["bot_id"] else None
+            if row.get("workflow_id"):
+                prompt = row["prompt"] or ("{{payload}}" if row["kind"] == "webhook" else "A new file arrived: {{file}}")
+                text, hits = render(prompt, {**ctx, "trigger": row["name"]})
+                run = eng.workflows.run(row["workflow_id"], text, dry_run=bool(row["dry_run"]), tainted=bool(hits), wait=True)
+                status = {"ok": "ok", "stopped": "stopped"}.get(run["status"], "error")
+                result = run["result"] or run["error"]
+                detail = f"workflow run {run['id']}"
+            elif not bot or bot["archived"]:
                 status, result = "skipped", "The Bot for this trigger no longer exists."
             elif bot["paused"]:
                 status, result = "skipped", "The Bot is paused."
@@ -333,6 +347,6 @@ class Triggers:
             upd["detail"] = detail
         self.db.update("trigger_runs", run_id, upd)
         eng.events.publish("trigger_run", trigger_id=row["id"], run_id=run_id, status=status)
-        bot = eng.bots.get(row["bot_id"])
-        if bot and status != "skipped":
+        bot = eng.bots.get(row["bot_id"]) if row["bot_id"] else None
+        if (bot or row.get("workflow_id")) and status != "skipped":
             eng.notify("routine", bot, thread_id, f"Trigger {'finished' if status == 'ok' else status}: {row['name']}", result[:160], urgent=status != "ok")

@@ -36,6 +36,7 @@ from .triggers import Triggers
 from .tools_builtin import builtin_tools
 from .updates import Updates
 from .usage import Usage
+from .workflows import Workflows
 
 
 def setup_logging() -> logging.Logger:
@@ -85,6 +86,7 @@ class Engine:
         self.turns = TurnManager(self)
         self.routines = Routines(self)
         self.triggers = Triggers(self)
+        self.workflows = Workflows(self)
         self.builtin: list[ToolSpec] = builtin_tools(self)
         self._labels = {t.name: t.label for t in self.builtin if t.label}
         self.base_url = "http://127.0.0.1:8765"
@@ -96,6 +98,7 @@ class Engine:
         self.recover()
         self.mcp.start_all()
         self.routines.start()
+        self.workflows.start()
         s = self.routines.sched
         s.add_job(self.messaging.run_due_followups, "interval", minutes=1, id="_followups", replace_existing=True)
         s.add_job(self.messaging.nudge_stalled, "interval", minutes=15, id="_nudge", replace_existing=True)
