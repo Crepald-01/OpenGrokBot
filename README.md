@@ -39,7 +39,12 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 - **Home dashboard.** One screen for the whole team: what needs you, who is working, token use for the week and recent actions. `Ctrl+K` opens a command palette, `Ctrl+1`-`9` jump to a Bot, and Settings > App lets you pick an accent colour, density and text size.
 - **Files, digest, cost and backup.** A Files page for what your Bots save, a daily digest of what they did, estimated spend from your own prices, Quick Ask (`Ctrl+J`, or `Ctrl+Alt+Space` anywhere), and one-zip backup and restore.
 - **Search, quiet hours and budgets.** `Ctrl+K` searches every chat and memory, Do Not Disturb and quiet hours silence notifications without losing them, and each Bot can have a daily token budget.
-- **Routines.** Run a skill or prompt on a cron schedule, per Bot, with history and notifications.
+- **Knowledge base.** Add notes, text and Word files or whole workspace folders; Bots search and quote them with `knowledge_search`. Indexed locally with full-text search: no model call, nothing leaves your PC.
+- **Automations.** Routines run a skill on a schedule. **Workflows** pass work down a pipeline of Bots (`{{previous}}` is the last step's result). **Triggers** start a Bot or a workflow from a webhook or when a file appears in a folder.
+- **Safety nets.** File history keeps the old contents when a Bot overwrites or deletes a file, so you can restore it. A backup model takes over when a Bot's model is rate limited, down or rejects its key.
+- **Insights and diagnostics.** See how Bots are doing over time (success rate, busiest hours, tools, problems), and run a plain-language health check with a support bundle you can attach to a bug report.
+- **Alerts anywhere.** Send alerts to Slack, Discord, Telegram, email or any webhook, with quiet hours applied. API tokens with `read`, `chat` or `full` scope let scripts use the [local API](docs/API.md) without your main token.
+- **Branch a conversation.** Right-click a message to branch from it, or edit your message and resend it in a new branch, leaving the original untouched.
 - **Bring your own model.** Anthropic or any OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq, Ollama, LM Studio, vLLM...). Models are **detected from your provider** and offered in a dropdown, and every Bot can use its own provider and model.
 - **Plugins and MCP.** Built-in Gmail, Google Calendar, Slack, Notion, Linear, Jira, GitHub and a generic REST connector, plus declarative or Python plugins and any MCP server.
 - **Phone access.** A mobile web app (PWA) with the same chats, live streaming, approvals and take-over view, plus optional push notifications through ntfy.
@@ -65,6 +70,14 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 <tr>
 <td width="50%"><img src="docs/screenshots/files.png" alt="The Files page"><br><sub><b>Files.</b> Everything your Bots saved, with previews.</sub></td>
 <td width="50%"><img src="docs/screenshots/usage-cost.png" alt="Usage with estimated cost"><br><sub><b>Cost.</b> Estimated spend from the prices you enter.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/knowledge.png" alt="The Knowledge page searching documents"><br><sub><b>Knowledge.</b> Documents your Bots can search and quote.</sub></td>
+<td width="50%"><img src="docs/screenshots/workflows.png" alt="A workflow and its run history"><br><sub><b>Workflows.</b> A pipeline of Bots, with every step's result.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/insights.png" alt="Insights: tasks per day, busiest hours, Bots and tools"><br><sub><b>Insights.</b> How your Bots are doing over time.</sub></td>
+<td width="50%"><img src="docs/screenshots/diagnostics.png" alt="Diagnostics health checks"><br><sub><b>Diagnostics.</b> A plain-language health check.</sub></td>
 </tr>
 </table>
 
@@ -186,7 +199,7 @@ The Bot asks for Gmail access (you approve), works through the mailbox with a li
 
 ## Documentation
 
-The full guide is in **[docs/GUIDE.md](docs/GUIDE.md)**:
+The full guide is in **[docs/GUIDE.md](docs/GUIDE.md)**, and the local HTTP API is described in **[docs/API.md](docs/API.md)**:
 
 [Recommended models](#recommended-models) · [Slash commands](#slash-commands) · [Install](docs/GUIDE.md#install) · [Creating Bots](docs/GUIDE.md#create-your-first-bot) · [How it works](docs/GUIDE.md#how-it-works) · [Skills](docs/GUIDE.md#writing-skills) · [Routines](docs/GUIDE.md#routines) · [Plugins and MCP](docs/GUIDE.md#adding-plugins-and-mcp-servers) · [Approvals and security](docs/GUIDE.md#approval-and-security-model) · [Remote mode](docs/GUIDE.md#remote-mode-setup) · [Mobile app](docs/GUIDE.md#mobile-app) · [Admin policy](docs/GUIDE.md#administration-presets)
 
@@ -204,7 +217,7 @@ To preview locally: `python -m http.server 8000 --directory site`.
 
 ```
 main.py        entry point (UI, --service, --tray, --install-browsers)
-core/          agent loop, bots, browser/computer, approvals, memory, skills, routines, MCP, plugins, providers
+core/          agent loop, bots, browser/computer, approvals, memory, knowledge, skills, routines, workflows, triggers, file history, insights, channels, MCP, plugins, providers
 service/       FastAPI server and service runner
 ui/            PySide6 desktop app (a client of the service)
 web/           mobile PWA

@@ -7,7 +7,7 @@ import os
 import re
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QKeyEvent, QPixmap
+from PySide6.QtGui import QGuiApplication, QKeyEvent, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
                                QPushButton, QScrollArea, QSizePolicy, QStackedLayout, QVBoxLayout, QWidget)
 
@@ -458,6 +458,7 @@ class ChatPage(QWidget):
     exportBot = Signal(str)
     duplicateBot = Signal(str)
     pinBot = Signal(str)
+    openThread = Signal(str, str)
     toast = Signal(str, str)
     pins: set = set()     # shared with the main window: the ids of pinned Bots
 
@@ -776,7 +777,10 @@ class ChatPage(QWidget):
             l = QVBoxLayout(f)
             l.setContentsMargins(16, 11, 16, 11)
             l.setSpacing(6)
-            l.addWidget(AutoMarkdown(it["text"] or ""))
+            md = AutoMarkdown(it["text"] or "")
+            l.addWidget(md)
+            self._message_menu(f, "user", it["id"], it["text"] or "")
+            self._message_menu(md, "user", it["id"], it["text"] or "")
             for name in it.get("images", []) or []:
                 self.images.get(name, lambda pm, l=l: l.addWidget(Thumb(pm, 260)))
             row = QWidget()
@@ -792,6 +796,7 @@ class ChatPage(QWidget):
             if w is not None:
                 w.set_text(it["text"], immediate=True)
                 w.setProperty("msg_id", it["id"])
+                self._message_menu(w, "assistant", it["id"])
                 return
             if it["id"] in self._assistant_ids():
                 return
@@ -821,10 +826,44 @@ class ChatPage(QWidget):
     def _assistant_ids(self) -> set[int]:
         return {w.property("msg_id") for w in self.list.box.findChildren(AutoMarkdown) if w.property("msg_id")}
 
+    # ------------------------------------------------------------ branching
+    def _message_menu(self, w: QWidget, kind: str, mid: int | None, text: str = "") -> None:
+        """Right-click a message: branch the conversation from it, or (your own messages) edit it and resend in a new branch."""
+        w.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        w.customContextMenuRequested.connect(lambda pos, w=w, kind=kind, text=text, mid=mid: self._show_message_menu(w.mapToGlobal(pos), kind, w.property("msg_id") or mid, text))
+
+    def _show_message_menu(self, gpos, kind: str, mid, text: str) -> None:
+        if self.group_id or not self.thread_id or not mid:
+            return
+        m = QMenu(self)
+        if text:
+            m.addAction("Copy text", lambda: QGuiApplication.clipboard().setText(text))
+        if kind == "user":
+            m.addAction("Edit and resend as a new branch…", lambda: self._edit_resend(int(mid), text))
+        m.addAction("Branch from here", lambda: self._branch(int(mid), None))
+        m.exec(gpos)
+
+    def _edit_resend(self, mid: int, text: str) -> None:
+        new, ok = QInputDialog.getMultiLineText(self, "Edit and resend", "Change your message. The Bot answers it in a new branch; this conversation stays as it is.", text)
+        if ok and new.strip():
+            self._branch(mid, new.strip())
+
+    def _branch(self, mid: int, text: str | None) -> None:
+        body: dict = {"message_id": mid, "run": True}
+        if text is not None:
+            body["text"] = text
+
+        def ok(d: dict) -> None:
+            th = d["thread"]
+            self.toast.emit("Branch created. Your original conversation is unchanged." if text is None else "Branch created: the Bot is answering your new message.", "ok")
+            self.openThread.emit(th["id"], th.get("bot_id", ""))
+        self.api.post(f"/api/threads/{self.thread_id}/fork", body, ok, lambda e: self.toast.emit(e, "error"))
+
     def _assistant_bubble(self, text: str, name: str, emoji: str, mid: int | None) -> QWidget:
         w = AutoMarkdown(text)
         if mid:
             w.setProperty("msg_id", mid)
+            self._message_menu(w, "assistant", mid)
         if not self.group_id or not name:
             return w
         box = QWidget()

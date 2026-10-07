@@ -33,6 +33,7 @@ KINDS = ("webhook", "folder")
 MAX_PAYLOAD = 64 * 1024
 MAX_TRIGGERS = 100
 MIN_GAP = 2.0                 # seconds between two firings of the same trigger
+MAX_PER_HOUR = 60             # a webhook address that leaks cannot burn your tokens without limit
 FOLDER_MAX_FILES = 2000
 FOLDER_BATCH = 5              # files started per check, so a big drop does not start dozens of tasks at once
 SETTLE_SECONDS = 3.0          # a file must be this old (unchanged) before it counts, so half-written files are not picked up
@@ -299,6 +300,8 @@ class Triggers:
             gap = time.time() - self._last.get(tid, 0)
             if gap < MIN_GAP and not manual and not force:
                 raise TriggerError("Too many requests: wait a moment between calls.", 429)
+            if row["kind"] == "webhook" and not manual and int(self.db.scalar("SELECT COUNT(*) FROM trigger_runs WHERE trigger_id=? AND started_at>?", (tid, time.time() - 3600), 0)) >= MAX_PER_HOUR:
+                raise TriggerError(f"This webhook was called {MAX_PER_HOUR} times in the last hour, which is the limit. Try again later.", 429)
             self._last[tid] = time.time()
             self.running.add(tid)
         run_id = new_id()

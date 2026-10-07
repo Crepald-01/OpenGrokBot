@@ -111,6 +111,40 @@ Bots see each active skill's name and description, and read the full text with `
 
 **Routines** run a skill and/or a prompt on a cron schedule, per Bot, in the background service (so they run with the window closed). Create them in **Routines** (presets like *Overnight (2:00 every day)*, or any 5-field cron), or let a Bot propose one (you approve it). Each run gets its own thread, a result, history, and a notification. Options: dry-run, notify on failures only, and *catch up* once if the PC was off at the scheduled time. Unattended runs still stop for approvals; if nobody answers within the routine timeout (default 2 h) that step is skipped.
 
+## Knowledge base
+
+Open **Knowledge** and add what you want your Bots to be able to look up: a note you type, text/Markdown/HTML/CSV/JSON or Word (`.docx`) files, or a workspace folder (which is re-read when its files change). Choose whether a document is shared with every Bot or kept for one. Documents are cut into passages and indexed with SQLite full-text search on your PC, so searching is instant and uses no model. Bots find things with `knowledge_search` and read more with `knowledge_read`; what they find is treated as data, never as instructions. PDFs are not supported yet: export them to text or Word first.
+
+## Automations
+
+**Automations** holds everything your Bots do without being asked.
+
+- **Routines** run a skill or prompt on a cron schedule (described above).
+- **Workflows** pass work from Bot to Bot. Each step is an ordinary task in its own chat thread, so approvals, budgets and memory work as usual. In a step, `{{input}}` is what you gave the run, `{{previous}}` the last step's result, and `{{step1}}`, `{{step2}}`... any earlier result. Results travel as untrusted data. If a step fails, the workflow stops there and the history shows which. Run one by hand, give it a schedule, or start it from a trigger.
+- **Triggers** start a Bot or a workflow when something happens. A **webhook** gives you an address (`/hooks/<id>/<secret>`) that anything can POST to; the address is shown once and only a hash is kept. A **folder watch** checks a workspace folder every few seconds and fires once for each new or changed file matching a pattern. Use `{{payload}}`, `{{json.field}}`, `{{file}}` and `{{filename}}` in the instructions. Webhook data is untrusted: if it looks like an attack, nothing in that run is approved automatically.
+
+## File history
+
+Before a Bot overwrites, appends to, deletes or moves over a file (or you delete one on the Files page), the old contents are kept in the app's data folder. On the Files page, **History** lists earlier versions and **Deleted** brings back deleted files. Restoring keeps the version it replaces, so a restore can be undone. Up to 20 versions per file are kept. Changes made by commands a Bot runs in the terminal are not tracked.
+
+## Backup model
+
+If a Bot's model is rate limited, has an outage, cannot be reached or rejects its key, it can switch to a backup model for the rest of that task and says so in its chat. Set one for the whole app in Settings > Models, and optionally a different one per Bot in its editor.
+
+## Insights and diagnostics
+
+**Activity > Insights** shows tasks per day, how often they finish well, when your Bots are busiest, which tools they use, per-Bot numbers and recent problems, for 7, 30 or 90 days. **Settings > Diagnostics** runs a health check (database, disk, keys, browser, scheduler, phone access, updates and more) and tells you what to do about anything wrong. **Save support bundle** writes a zip with the results, versions, settings without secrets and a scrubbed log tail, for a bug report. It has no chats, memories, files or keys.
+
+## Notification channels and API tokens
+
+**Settings > Notifications > Other places to get alerts** sends the same alerts as your PC to Slack, Discord, Telegram, email (SMTP) or any webhook, for the kinds of alert you choose. Quiet hours apply. Addresses, bot tokens and passwords are kept in the Windows Credential Manager.
+
+**Settings > API access** makes scoped tokens (`read`, `chat` or `full`) so scripts can use the local API without your main access token. See [API.md](API.md).
+
+## Branching a conversation
+
+Right-click a message in a Bot's chat: **Branch from here** copies the conversation up to that point into a new thread; **Edit and resend as a new branch** (on your own messages) puts your new wording in place of the old one and lets the Bot answer it. The original thread is never changed.
+
 ## Adding plugins and MCP servers
 
 **Built-in connectors** (Plugins page): Gmail and Google Calendar (OAuth: create a *Desktop app* OAuth client in Google Cloud, enable the API, paste client id/secret, press **Connect**), Slack, Notion, Linear, Jira, GitHub, and a **generic REST connector**. Read tools run freely; anything that writes or sends asks for approval.

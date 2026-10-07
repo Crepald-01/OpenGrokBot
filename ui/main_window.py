@@ -22,17 +22,19 @@ from .pages_files import FilesPage
 from .pages_home import DigestDialog, HomePage
 from .pages_inbox import InboxPage
 from .pages_plugins import PluginsPage
-from .pages_routines import RoutinesPage
+from .pages_automations import AutomationsPage
+from .pages_insights import ActivityPage
+from .pages_knowledge import KnowledgePage
 from .pages_settings import SettingsPage
 from .pages_skills import SkillsPage
-from .pages_usage_log import LogPage, UsagePage
+from .pages_usage_log import UsagePage
 from .quick_ask import QuickAsk
 from .store import Store
 from .takeover import TakeoverView
 from .widgets import Avatar, ImageCache, Toasts, button, card, chip, icon_button, label, repolish
 
-NAV = [("home", "Home", "home"), ("inbox", "Inbox", "inbox"), ("computer", "Computer", "computer"), ("files", "Files", "folder"), ("skills", "Skills", "skills"), ("routines", "Routines", "routines"),
-       ("plugins", "Plugins", "plugins"), ("usage", "Usage", "usage"), ("log", "Action log", "log")]
+NAV = [("home", "Home", "home"), ("inbox", "Inbox", "inbox"), ("computer", "Computer", "computer"), ("files", "Files", "folder"), ("knowledge", "Knowledge", "book"), ("skills", "Skills", "skills"),
+       ("routines", "Automations", "zap"), ("plugins", "Plugins", "plugins"), ("usage", "Usage", "usage"), ("log", "Activity", "activity")]
 
 
 def playwright_browser_installed() -> bool:
@@ -51,7 +53,7 @@ class SideRow(QFrame):
         self.setProperty("checked", False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         h = QHBoxLayout(self)
-        h.setContentsMargins(8, theme.dp(6 if tall else 5), 10, theme.dp(6 if tall else 5))
+        h.setContentsMargins(8, theme.dp(6 if tall else 3), 10, theme.dp(6 if tall else 3))   # page rows are slimmer than Bot rows, so the whole sidebar still fits a 768px-high screen
         h.setSpacing(10)
         self.leading = leading
         if leading is not None:
@@ -497,8 +499,8 @@ class MainWindow(QMainWindow):
         self.welcome.openSettings.connect(lambda: self.select("page:settings"))
         self.chat = ChatPage(api, store, self.images)
         self.pages: dict[str, QWidget] = {
-            "home": HomePage(api, store), "inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "files": FilesPage(api, store), "skills": SkillsPage(api, store), "routines": RoutinesPage(api, store),
-            "plugins": PluginsPage(api, store), "usage": UsagePage(api, store), "log": LogPage(api, store), "settings": SettingsPage(api, store),
+            "home": HomePage(api, store), "inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "files": FilesPage(api, store), "knowledge": KnowledgePage(api, store), "skills": SkillsPage(api, store), "routines": AutomationsPage(api, store),
+            "plugins": PluginsPage(api, store), "usage": UsagePage(api, store), "log": ActivityPage(api, store), "settings": SettingsPage(api, store),
         }
         for w in (self.welcome, self.chat, *self.pages.values()):
             self.stack.addWidget(w)
@@ -510,6 +512,7 @@ class MainWindow(QMainWindow):
         self.chat.pins = self._pins
         self.chat.duplicateBot.connect(self.duplicate_bot)
         self.chat.pinBot.connect(self.toggle_pin)
+        self.chat.openThread.connect(self.open_thread)
         self.chat.toast.connect(self.toast)
         home: HomePage = self.pages["home"]  # type: ignore[assignment]
         home.openBot.connect(self.show_bot)

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.0.0 (unreleased)
+
+Ten major features. 2.0 turns Bots from helpers you talk to into a team you can set up, connect to other things and trust to recover.
+
+- **Knowledge base.** A new Knowledge page: add notes, text/Markdown/HTML/CSV/JSON and Word files, or whole workspace folders (re-read when they change). They are cut into passages and indexed with SQLite full-text search on your PC, ranked by relevance, with no model call. A document can be shared with every Bot or kept for one. Bots get `knowledge_search` and `knowledge_read`, and results are treated as untrusted data. PDF is not supported yet.
+- **Workflows.** A pipeline of Bots: step 1's Bot does its part, its result goes to step 2's Bot, and so on (`{{input}}`, `{{previous}}`, `{{step1}}`...). Every step is an ordinary task in its own chat thread, with approvals, budgets and memory as usual. Earlier results are passed on as data, not instructions, and a result that looks like an attack turns off automatic approvals for the next step. Run by hand, on a cron schedule or from a trigger; stop a run; see every step's result in the history.
+- **Triggers.** Start a Bot or a workflow when something happens. A **webhook** has a secret address (`/hooks/<id>/<secret>`) that anything can POST to: shown once, only a hash is stored, wrong guesses look identical to unknown addresses and are locked out, bodies are limited to 64 KB, one run at a time, at most 60 an hour. A **folder watch** fires once for each new or changed file that matches a pattern, skipping files still being written and what was already there. Webhook data is untrusted and taints the run if it looks like an attack.
+- **Backup model.** When a Bot's model is rate limited, has an outage, cannot be reached or rejects its key, it switches to a backup model for the rest of the task and says so in its chat, instead of failing. Set one for the whole app (Settings > Models) and optionally per Bot. Usage is charged to the model that did the work.
+- **File history.** Before a Bot overwrites, appends to, deletes or moves over a file (or you delete one on the Files page), the old contents are kept. The Files page gets **History** (read and restore earlier versions) and **Deleted** (bring files back, with who deleted them). Restores keep the version they replace, so they can be undone. Up to 20 versions per file; large files are skipped.
+- **Insights.** Activity now has an Insights tab: tasks per day, how often they finish well, typical task length, tokens, busiest hours, per-Bot numbers, most-used tools and recent problems, for 7, 30 or 90 days or one Bot. Worked out from what the app already records.
+- **Notification channels.** Send alerts to Slack, Discord, Telegram, email (SMTP) or any webhook, for the kinds of alert you choose (Settings > Notifications). Quiet hours and Do Not Disturb apply. Addresses, bot tokens and passwords live in the Windows Credential Manager and are never shown again. A Test button reports failures without revealing the secret.
+- **API tokens.** Named tokens with `read`, `chat` or `full` scope (Settings > API access) so scripts can use the local API without the main access token. Shown once, stored as a hash, revocable, optional expiry, last-used time. Tokens can never touch tokens, backups, channels, settings, provider keys, approvals, plugin/MCP setup or the terminal. New `docs/API.md`.
+- **Branch a conversation.** Right-click a message: **Branch from here** copies the conversation up to it into a new thread, and **Edit and resend as a new branch** swaps in your new wording and lets the Bot answer it. The original is never changed.
+- **Diagnostics.** Settings > Diagnostics runs a plain-language health check (database, disk, workspace, key storage, providers, browser, scheduler, phone access, updates, logs, stuck tasks, old approvals, search, channels, file history) and says what to do about anything wrong. **Save support bundle** writes a zip with the results, versions, settings without secrets and a scrubbed log tail. It has no chats, memories, files or keys.
+
+**Also changed**
+- The sidebar groups Routines, Workflows and Triggers under **Automations**, the action log and Insights under **Activity**, and adds **Knowledge**.
+- Bots can have a backup model in their editor.
+- Webhook, API token and channel secrets are scrubbed from support bundles and logs.
+
 ## 1.6.0
 
 Bug fixes and interface polish only. No new features.

@@ -232,6 +232,16 @@ class BotEditor(QDialog):
         self.budget.setValue(int(self.bot.get("daily_token_limit", 0) or 0))
         self.budget.setToolTip("When this Bot has used this many tokens since midnight it stops, and works again the next day. Also: /budget 50k in its chat.")
         mf.addRow("Daily budget", self.budget)
+        self.fb_prov = QComboBox()
+        self.fb_prov.addItem("Use the app-wide backup (Settings > Models)", "")
+        for pr in store.profiles:
+            self.fb_prov.addItem(pr["label"], pr["id"])
+        self.fb_prov.setCurrentIndex(max(0, self.fb_prov.findData(self.bot.get("fallback_profile", ""))))
+        self.fb_model = QLineEdit(self.bot.get("fallback_model", ""))
+        self.fb_model.setPlaceholderText("Provider default")
+        self.fb_prov.setToolTip("If this Bot's model is rate limited, down, unreachable or rejects its key, it switches to this one for the rest of the task.")
+        mf.addRow("Backup provider", self.fb_prov)
+        mf.addRow("Backup model", self.fb_model)
         self.proactive = QComboBox()
         self.proactive.addItem("Off: only works when asked", "off")
         self.proactive.addItem("Suggest: notices work and proposes it", "suggest")
@@ -429,7 +439,8 @@ class BotEditor(QDialog):
         grants = [self.grants.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.grants.count()) if self.grants.item(i).checkState() == Qt.CheckState.Checked]
         body = {"name": self.name.text().strip(), "emoji": self.emoji.text().strip() or "🤖", "job": self.job.toPlainText().strip(),
                 "instructions": self.instr.toPlainText().strip(), "profile": self.prov.currentData(), "model": self.picker.text(),
-                "step_limit": self.steps.value(), "daily_token_limit": self.budget.value(), "proactive": self.proactive.currentData(), "net_mode": self.net.currentData(),
+                "step_limit": self.steps.value(), "daily_token_limit": self.budget.value(), "fallback_profile": self.fb_prov.currentData() or "",
+                "fallback_model": self.fb_model.text().strip(), "proactive": self.proactive.currentData(), "net_mode": self.net.currentData(),
                 "net_allow": lines(self.allow.toPlainText()), "net_deny": lines(self.deny.toPlainText()), "grants": grants}
         if self.approval.isEnabled():
             body["approval_mode"] = self.approval.currentData()

@@ -378,6 +378,18 @@ class TriggerTests(Base):
         self.assertNotEqual(new["secret"], t["secret"])
         self.assertEqual(self.c.post(t["url_path"], json={}).status_code, 404)                     # the old address stopped working
 
+    def test_a_leaked_address_cannot_burn_tokens_without_limit(self):
+        from core import triggers as tr
+        bot, _ = self.new_bot()
+        self.use([LLMResult(text="ok")] * 3)
+        t = self.make_webhook(bot)
+        for i in range(tr.MAX_PER_HOUR):
+            self.eng.db.insert("trigger_runs", {"id": f"cap{next(_N)}", "trigger_id": t["id"], "started_at": time.time() - 60 - i, "ended_at": time.time(), "status": "ok"})
+        r = self.c.post(t["url_path"], json={})
+        self.assertEqual(r.status_code, 429)
+        self.assertIn("limit", r.json()["error"])
+        self.assertEqual(self.c.post(f"/api/triggers/{t['id']}/test", headers=self.h, json={}).status_code, 200)     # your own test fire is not capped
+
     def test_an_attack_in_the_payload_taints_the_run(self):
         bot, _ = self.new_bot()
         self.use([LLMResult(text="I will not obey that.")])

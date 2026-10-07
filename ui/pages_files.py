@@ -6,8 +6,8 @@ import time
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QScrollArea, QSplitter,
-                               QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QScrollArea,
+                               QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import icons, theme
 from .api import Api
@@ -27,6 +27,73 @@ def ago(ts: float) -> str:
 ICON_FOR = {"dir": "folder", "text": "file", "image": "image", "other": "file"}
 
 
+class HistoryDialog(QDialog):
+    """Earlier versions of one file: look at them and put one back."""
+
+    def __init__(self, api: Api, path: str, parent=None):
+        super().__init__(parent)
+        self.api, self.path = api, path
+        self.versions: list[dict] = []
+        self.restored = False
+        self.setWindowTitle(f"History of {path.rsplit('/', 1)[-1]}")
+        self.resize(780, 520)
+        v = QVBoxLayout(self)
+        v.addWidget(label("Before a Bot overwrites, appends to, deletes or replaces this file (or you delete it here), the old contents are kept. Pick a version to read it, and restore it if you want it back. "
+                          "Restoring keeps today's version too, so it can be undone.", muted=True))
+        split = QSplitter(Qt.Orientation.Horizontal)
+        self.list = QListWidget()
+        self.list.currentRowChanged.connect(self._pick)
+        split.addWidget(self.list)
+        self.text = QPlainTextEdit()
+        self.text.setReadOnly(True)
+        self.text.setFont(theme.mono())
+        split.addWidget(self.text)
+        split.setSizes([280, 480])
+        v.addWidget(split, 1)
+        self.msg = label("", muted=True)
+        v.addWidget(self.msg)
+        row = QHBoxLayout()
+        self.restore_btn = button("Restore this version", primary=True, icon="history", on=self._restore)
+        self.restore_btn.setEnabled(False)
+        row.addWidget(self.restore_btn)
+        row.addStretch(1)
+        row.addWidget(button("Close", on=self.accept))
+        v.addLayout(row)
+        api.get("/api/ws/history", self._got, lambda m: self.msg.setText(m), params={"path": path})
+
+    def _got(self, d: dict) -> None:
+        self.versions = d["versions"]
+        self.list.clear()
+        for r in self.versions:
+            who = f" · {r['bot_name']}" if r.get("bot_name") else ""
+            self.list.addItem(f"{time.strftime('%b %d %H:%M', time.localtime(r['ts']))}  ·  {r['reason']}{who}\n{human_size(r['size'])}")
+        if not self.versions:
+            it = QListWidgetItem("No earlier versions yet.")
+            it.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.list.addItem(it)
+        else:
+            self.list.setCurrentRow(0)
+
+    def _pick(self, row: int) -> None:
+        self.restore_btn.setEnabled(0 <= row < len(self.versions))
+        if 0 <= row < len(self.versions):
+            vid = self.versions[row]["id"]
+            self.api.get("/api/ws/version", lambda d, i=vid: self._got_text(i, d), lambda m: self.msg.setText(m), params={"id": vid})
+
+    def _got_text(self, vid: int, d: dict) -> None:
+        row = self.list.currentRow()
+        if 0 <= row < len(self.versions) and self.versions[row]["id"] == vid:
+            self.text.setPlainText("(This version is not text, so it cannot be shown. You can still restore it.)" if d.get("binary") else
+                                   d["text"] + ("\n\n… (shown the first 200 KB)" if d.get("truncated") else ""))
+
+    def _restore(self) -> None:
+        row = self.list.currentRow()
+        if not (0 <= row < len(self.versions)):
+            return
+        self.api.post("/api/ws/restore", {"path": self.path, "version_id": self.versions[row]["id"]}, lambda _r: (setattr(self, "restored", True), self.accept()),
+                      lambda m: self.msg.setText(m))
+
+
 class FilesPage(QWidget):
     def __init__(self, api: Api, store: Store):
         super().__init__()
@@ -43,6 +110,7 @@ class FilesPage(QWidget):
         bar = QHBoxLayout()
         self.b_recent = button("Recent", on=lambda: self.set_mode("recent"))
         self.b_browse = button("Folders", on=lambda: self.set_mode("browse"))
+        self.b_deleted = button("Deleted", on=lambda: self.set_mode("deleted"))
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search file names…")
         self.search.setProperty("search", True)
@@ -52,6 +120,7 @@ class FilesPage(QWidget):
         self._timer.timeout.connect(self._run_search)
         bar.addWidget(self.b_recent)
         bar.addWidget(self.b_browse)
+        bar.addWidget(self.b_deleted)
         bar.addWidget(self.search, 1)
         v.addLayout(bar)
 
@@ -101,9 +170,13 @@ class FilesPage(QWidget):
         rv.addWidget(self.stack, 1)
         actions = QHBoxLayout()
         self.save_btn = button("Save a copy…", icon="download", on=self.save_copy)
+        self.hist_btn = button("History…", icon="history", on=self.show_history, tip="Earlier versions of this file")
         self.del_btn = button("Delete", danger=True, icon="trash", on=self.delete_current)
+        self.restore_btn = button("Restore", primary=True, icon="history", on=self.restore_deleted, tip="Put this deleted file back in the workspace")
         actions.addWidget(self.save_btn)
+        actions.addWidget(self.hist_btn)
         actions.addWidget(self.del_btn)
+        actions.addWidget(self.restore_btn)
         actions.addStretch(1)
         rv.addLayout(actions)
         split.addWidget(right)
@@ -119,10 +192,14 @@ class FilesPage(QWidget):
         self.reload()
 
     def _style_modes(self) -> None:
-        for b, on in ((self.b_recent, self.mode == "recent"), (self.b_browse, self.mode == "browse")):
+        for b, on in ((self.b_recent, self.mode == "recent"), (self.b_browse, self.mode == "browse"), (self.b_deleted, self.mode == "deleted")):
             b.setProperty("primary", on)
             b.style().unpolish(b)
             b.style().polish(b)
+        deleted = self.mode == "deleted"
+        for b in (self.save_btn, self.hist_btn, self.del_btn):
+            b.setVisible(not deleted)
+        self.restore_btn.setVisible(deleted)
 
     def set_mode(self, mode: str) -> None:
         if mode != "search":
@@ -134,7 +211,9 @@ class FilesPage(QWidget):
         self.reload()
 
     def reload(self) -> None:
-        if self.mode == "browse":
+        if self.mode == "deleted":
+            self.api.get("/api/ws/deleted", self._got_deleted, self._error)
+        elif self.mode == "browse":
             self.api.get("/api/ws/list", self._got_list, self._error, params={"path": self.cwd})
         elif self.mode == "search":
             self.api.get("/api/ws/search", lambda d: self._show(d["entries"], f"{len(d['entries'])} match{'es' if len(d['entries']) != 1 else ''}"), self._error,
@@ -148,6 +227,34 @@ class FilesPage(QWidget):
     def _got_recent(self, d: dict) -> None:
         self.stats = d.get("stats", {})
         self._show(d["entries"], f"{self.stats.get('files', 0)} files · {human_size(self.stats.get('bytes', 0))} in the workspace")
+
+    def _got_deleted(self, d: dict) -> None:
+        rows = [{**e, "deleted": True, "name": e["path"].rsplit("/", 1)[-1], "dir": False, "kind": "other", "mtime": e["ts"]} for e in d["entries"]]
+        keep = self.current["version_id"] if self.current and self.current.get("deleted") else 0
+        self.entries = rows
+        self.list.blockSignals(True)
+        self.list.clear()
+        p = theme.palette()
+        for e in rows:
+            who = f" by {e['bot_name']}" if e.get("bot_name") else ""
+            where = (e["path"].rsplit("/", 1)[0] + " · ") if "/" in e["path"] else ""
+            it = QListWidgetItem(icons.icon("file", p["muted"], 18), f"{e['name']}\n{where}deleted{who} · {ago(e['ts'])} · {human_size(e['size'])}")
+            it.setData(Qt.ItemDataRole.UserRole, e)
+            self.list.addItem(it)
+        self.list.blockSignals(False)
+        self.crumb.setText("Deleted files you can bring back")
+        self.up_btn.hide()
+        n = len(rows)
+        self.summary.setText(f"{n} deleted file{'s' if n != 1 else ''} can be restored" if n else "")
+        if not rows:
+            it = QListWidgetItem("Nothing deleted lately. When a Bot (or you) deletes a file, it shows up here so you can restore it.")
+            it.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.list.addItem(it)
+        for i, e in enumerate(rows):
+            if e["version_id"] == keep:
+                self.list.setCurrentRow(i)
+                return
+        self._clear_preview()
 
     def _got_list(self, d: dict) -> None:
         self.cwd = d["path"]
@@ -209,6 +316,15 @@ class FilesPage(QWidget):
 
     def _row_changed(self, row: int) -> None:
         e = self._entry()
+        if e and e.get("deleted"):
+            self.current = e
+            who = f" by {e['bot_name']}" if e.get("bot_name") else ""
+            self.p_title.setText(e["name"])
+            self.p_meta.setText(f"{e['path']}  ·  deleted{who}  ·  {ago(e['ts'])}  ·  {human_size(e['size'])}")
+            self.restore_btn.setEnabled(True)
+            self.api.get("/api/ws/version", lambda d, v=e["version_id"]: self._got_version(v, d), lambda m: self._msg(m), params={"id": e["version_id"]})
+            self._msg("Loading…")
+            return
         if not e or e["dir"]:
             self._clear_preview(keep_title=bool(e))
             if e:
@@ -232,6 +348,15 @@ class FilesPage(QWidget):
             self._msg("Loading…")
         else:
             self._msg("No preview for this kind of file. Use “Save a copy…” to open it elsewhere." if d["kind"] != "image" else "This image is too large to preview.")
+
+    def _got_version(self, vid: int, d: dict) -> None:
+        if not self.current or self.current.get("version_id") != vid:
+            return
+        if d.get("binary"):
+            self._msg("No preview for this kind of file. Restore it to get it back.")
+        else:
+            self.p_text.setPlainText(d["text"] + ("\n\n… (shown the first 200 KB)" if d.get("truncated") else ""))
+            self.stack.setCurrentWidget(self.p_text)
 
     def _got_image(self, path: str, data: bytes) -> None:
         if not self.current or self.current["path"] != path:
@@ -257,7 +382,9 @@ class FilesPage(QWidget):
 
     def _set_preview_enabled(self, on: bool) -> None:
         self.save_btn.setEnabled(on)
+        self.hist_btn.setEnabled(on)
         self.del_btn.setEnabled(on)
+        self.restore_btn.setEnabled(on and self.mode == "deleted")
 
     # ------------------------------------------------------------------ actions
     def save_copy(self) -> None:
@@ -278,9 +405,25 @@ class FilesPage(QWidget):
         if not self.current:
             return
         name, path = self.current["name"], self.current["path"]
-        if QMessageBox.question(self, "Delete file", f"Delete {name} from the workspace? This cannot be undone.") != QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, "Delete file", f"Delete {name} from the workspace? A copy is kept, so you can bring it back from the Deleted view.") != QMessageBox.StandardButton.Yes:
             return
         self.api.delete("/api/ws/file", lambda _r: (self._clear_preview(), self.reload()), self._error, params={"path": path})
+
+    def show_history(self) -> None:
+        if not self.current or self.current.get("dir"):
+            return
+        d = HistoryDialog(self.api, self.current["path"], self)
+        d.exec()
+        if d.restored:
+            self.summary.setText(f"Restored an earlier version of {self.current['name']}.")
+            self.reload()
+
+    def restore_deleted(self) -> None:
+        e = self.current
+        if not e or not e.get("deleted"):
+            return
+        self.api.post("/api/ws/restore", {"path": e["path"], "version_id": e["version_id"]},
+                      lambda _r: (self._clear_preview(), self.reload(), self.summary.setText(f"Restored {e['name']} to {e['path']}.")), self._error)
 
     def open_folder(self) -> None:
         base = os.path.join(str(self.store.status.get("data_dir", "")), "workspace")

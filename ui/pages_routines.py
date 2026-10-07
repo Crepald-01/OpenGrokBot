@@ -98,11 +98,14 @@ class RoutineDialog(QDialog):
 class RoutinesPage(QWidget):
     openThread = Signal(str, str)
 
-    def __init__(self, api: Api, store: Store):
+    def __init__(self, api: Api, store: Store, embedded: bool = False):
         super().__init__()
         self.api, self.store = api, store
         self.routines: list[dict] = []
-        v = page_layout(self, PageHeader("Routines", "Save a skill as a scheduled routine per Bot. Routines run unattended in the background service and ask you only when something needs approval."))
+        v = page_layout(self, None if embedded else PageHeader("Routines", "Save a skill as a scheduled routine per Bot. Routines run unattended in the background service and ask you only when something needs approval."))
+        if embedded:   # shown inside the Automations page, which has its own header
+            v.setContentsMargins(0, 12, 0, 0)
+            v.addWidget(label("Save a skill as a scheduled routine per Bot. Routines run unattended in the background service and ask you only when something needs approval.", muted=True))
         bar = QHBoxLayout()
         bar.addWidget(button("New routine…", primary=True, on=self.new))
         bar.addWidget(button("Edit…", on=self.edit))

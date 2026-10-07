@@ -15,6 +15,7 @@ from . import theme
 from .api import Api, Connection, load_ui_config, save_ui_config
 from .model_picker import ModelPicker
 from .store import Store
+from .settings_extra import ApiAccessPanel, BackupModelPanel, ChannelsPanel, DiagnosticsPanel
 from .widgets import PageHeader, SideTabs, button, chip, label, page_layout, repolish
 
 
@@ -141,6 +142,8 @@ class SettingsPage(QWidget):
         self._build_notifications()
         self._build_computer()
         self._build_mobile()
+        self._build_api_access()
+        self._build_diagnostics()
         self._build_app()
         store.settingsChanged.connect(self.load)
 
@@ -198,8 +201,18 @@ class SettingsPage(QWidget):
         row.addWidget(self.p_delete)
         row.addStretch(1)
         right.addLayout(row)
+        self.backup_panel = BackupModelPanel(self.api, self.store)
+        right.addSpacing(10)
+        right.addWidget(self.backup_panel)
         right.addStretch(1)
-        h.addLayout(right, 1)
+        rw = QWidget()
+        rw.setLayout(right)
+        rsc = QScrollArea()
+        rsc.setWidgetResizable(True)
+        rsc.setFrameShape(QScrollArea.Shape.NoFrame)
+        rsc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        rsc.setWidget(rw)
+        h.addWidget(rsc, 1)
         self.tabs.addTab(w, "Models", "sparkle")
         self.cur_prov = ""
 
@@ -396,6 +409,8 @@ class SettingsPage(QWidget):
         f.addRow("Phone push: ntfy server", self.no_url)
         f.addRow("Phone push: topic", self.no_topic)
         v.addLayout(f)
+        self.channels_panel = ChannelsPanel(self.api, self.store)
+        v.addWidget(self.channels_panel)
         v.addWidget(label("For push notifications while your phone is locked, install the free ntfy app, subscribe to the same topic, and fill in the two fields above (use your own server for privacy). The mobile web app also shows alerts while it is open.", muted=True))
         dnd = QHBoxLayout()
         dnd.addWidget(label("Do Not Disturb:", muted=True, wrap=False))
@@ -510,6 +525,20 @@ class SettingsPage(QWidget):
             self.switchConnection.emit(Connection("local"))
         save_ui_config({**load_ui_config(), **cfg})
         self.c_status.setText("Switched. Reconnecting…")
+
+    # ============================================================ api access
+    def _build_api_access(self) -> None:
+        sc, v = form_tab()
+        v.addWidget(ApiAccessPanel(self.api, self.store))
+        v.addStretch(1)
+        self.tabs.addTab(sc, "API access", "key")
+
+    # ============================================================ diagnostics
+    def _build_diagnostics(self) -> None:
+        sc, v = form_tab()
+        v.addWidget(DiagnosticsPanel(self.api, self.store))
+        v.addStretch(1)
+        self.tabs.addTab(sc, "Diagnostics", "heart")
 
     # ================================================================ mobile
     def _build_mobile(self) -> None:
@@ -750,6 +779,7 @@ class SettingsPage(QWidget):
         if not s:
             return
         self._prov_refresh_list()
+        self.backup_panel.load()
         self.s_mode.setCurrentIndex(max(0, self.s_mode.findData(s.get("approval", {}).get("default_mode", "ask"))))
         self.s_rprov.clear()
         self.s_rprov.addItem("Same as the Bot's provider", "")

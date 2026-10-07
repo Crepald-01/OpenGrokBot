@@ -225,10 +225,12 @@ class UsagePage(QWidget):
 
 
 class LogPage(QWidget):
-    def __init__(self, api: Api, store: Store):
+    def __init__(self, api: Api, store: Store, embedded: bool = False):
         super().__init__()
         self.api, self.store = api, store
-        v = page_layout(self, PageHeader("Action log", "Every tool call, page visited and file touched, per Bot. Secrets are scrubbed before they are written."))
+        v = page_layout(self, None if embedded else PageHeader("Action log", "Every tool call, page visited and file touched, per Bot. Secrets are scrubbed before they are written."))
+        if embedded:   # shown inside the Activity page, which has its own header
+            v.setContentsMargins(0, 12, 0, 0)
         bar = QHBoxLayout()
         self.bot = QComboBox()
         self.status = QComboBox()
