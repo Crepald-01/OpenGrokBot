@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6.0 (unreleased)
+## 1.6.0
 
 Bug fixes and interface polish only. No new features.
 
