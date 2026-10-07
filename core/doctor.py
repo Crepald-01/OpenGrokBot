@@ -233,7 +233,8 @@ class Doctor:
         info = {"app": "OpenGrokBot", "version": VERSION, "python": sys.version.split()[0], "platform": platform.platform(), "frozen": bool(getattr(sys, "frozen", False)),
                 "created": time.strftime("%Y-%m-%d %H:%M:%S"), "bots": len(eng.bots.list()), "knowledge": eng.knowledge.stats(), "history": eng.filehistory.stats()}
         log = ""
-        lf = paths.logs_dir() / "service.log"
+        from pathlib import Path
+        lf = next((Path(h.baseFilename) for h in eng.log.handlers if hasattr(h, "baseFilename")), paths.logs_dir() / "service.log")   # the file the app is really writing
         if lf.exists():
             lines = lf.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]
             log = scrub("\n".join(lines))
