@@ -17,6 +17,7 @@ from .channels import Channels
 from .computer import Computer
 from .db import Database, new_id, now
 from .digest import Digest
+from .doctor import Doctor
 from .filehistory import FileHistory
 from .files import Files
 from .insights import Insights
@@ -32,7 +33,7 @@ from .search import Search
 from .settings import Admin, Settings, plugin_allowed
 from .skills import Skills
 from .templates import TEAM_PRESET, template as get_template
-from .threads import Threads
+from .threads import Threads, fork_thread
 from .tooling import ToolSpec
 from .triggers import Triggers
 from .tools_builtin import builtin_tools
@@ -83,6 +84,7 @@ class Engine:
         self.apitokens = ApiTokens(self.db)
         self.digest = Digest(self)
         self.insights = Insights(self)
+        self.doctor = Doctor(self)
         self.updates = Updates(self.settings)
         self.mcp = McpManager(self.db, self.admin)
         self.plugins = PluginManager(self)
@@ -249,6 +251,14 @@ class Engine:
             if self.turns.start(bid, thread_id, trigger="user"):
                 started.append(bid)
         return {"started": started}
+
+    def branch_thread(self, thread_id: str, message_id: int, text: str | None = None, run: bool = True) -> dict:
+        """Branch a conversation at a message (see threads.fork_thread). With new text and run=True the Bot starts on it straight away."""
+        new = fork_thread(self.threads, thread_id, message_id, text)
+        started = False
+        if text is not None and run and new.get("bot_id"):
+            started = self.turns.start(new["bot_id"], new["id"], trigger="user") is not None
+        return {"thread": new, "started": started}
 
     def create_from_template(self, tid: str, name: str | None = None) -> dict:
         t = get_template(tid)

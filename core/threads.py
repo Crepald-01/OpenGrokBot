@@ -271,3 +271,56 @@ class Threads:
             if len(out) >= limit:
                 break
         return out
+
+
+class ThreadError(ValueError):
+    pass
+
+
+def fork_thread(threads: "Threads", thread_id: str, message_id: int, text: str | None = None) -> dict:
+    """Branch a conversation. A copy of the thread is made up to a chosen message and continues from there on its own; the original
+    is untouched, so you can try a different question or a different instruction and compare.
+
+    With text=None the copy includes the chosen message ("branch from here"). With text, the copy stops just before the chosen user
+    message and ends with your new wording in its place ("edit and resend"). Returns the new thread (with last_message_id)."""
+    th = threads.get(thread_id)
+    if not th:
+        raise ThreadError("No such conversation.")
+    if th.get("kind") == "group":
+        raise ThreadError("Group chats cannot be branched. Branch a Bot's own conversation instead.")
+    rows = threads.rows(thread_id)
+    target = next((r for r in rows if r["id"] == int(message_id) and r["kind"] == "llm"), None)
+    if target is None:
+        raise ThreadError("That message is not part of this conversation.")
+    if text is not None and not (target["role"] == "user" and target["author"] == "user"):
+        raise ThreadError("Only your own messages can be edited.")
+    if text is not None and not text.strip():
+        raise ThreadError("The new message is empty.")
+    key = lambda r: r["anchor"] or r["id"]   # noqa: E731  (tool results are stored after, and sorted with, the assistant message they answer)
+    cut = key(target)
+    keep = [r for r in rows if (key(r) < cut if text is not None else key(r) <= cut)]
+    title = (th.get("title") or "Conversation")
+    new = threads.create(th.get("bot_id"), ("Branch: " + title)[:80], kind="dm")
+    nid = new["id"]
+    idmap: dict[int, int] = {}
+    last = 0
+    for r in keep:
+        anchor = idmap.get(r["anchor"]) if r["anchor"] else None
+        new_id_ = threads.db.insert("messages", {"thread_id": nid, "author": r["author"], "role": r["role"], "kind": r["kind"], "content": r["content"], "anchor": anchor,
+                                                 "turn_id": r["turn_id"], "created_at": r["created_at"]})
+        idmap[r["id"]] = new_id_
+        last = new_id_
+    upto = int(th.get("summary_upto") or 0)
+    if upto and th.get("summary") and keep and upto <= max(r["id"] for r in keep):
+        covered = [idmap[r["id"]] for r in keep if r["id"] <= upto]
+        if covered:
+            threads.set_summary(nid, th["summary"], max(covered))
+    if text is not None:
+        blocks = [{"type": "text", "text": text.strip()}] + [b for b in jload(target["content"], []) if b.get("type") == "image"]
+        last = threads.add(nid, "user", "user", blocks, publish=False)
+    threads.db.update("threads", nid, {"updated_at": now()})
+    threads.events.publish("threads", change="created", thread_id=nid, bot_id=th.get("bot_id", ""))
+    out = threads.get(nid) or {}
+    out["last_message_id"] = last
+    out["copied"] = len(keep)
+    return out

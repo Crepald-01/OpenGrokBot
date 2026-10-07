@@ -868,6 +868,20 @@ def create_app(engine: Engine, token: str) -> FastAPI:
                 eng.events.unsubscribe(sid)
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
+    @app.post("/api/threads/{tid}/fork", dependencies=[api])
+    def thread_fork(tid: str, body: dict = Body(...)) -> dict:
+        text = body.get("text")
+        return eng.branch_thread(tid, int(body.get("message_id", 0)), None if text is None else str(text), bool(body.get("run", True)))
+
+    @app.get("/api/diagnostics", dependencies=[api])
+    def diagnostics() -> dict:
+        return eng.doctor.run()
+
+    @app.get("/api/diagnostics/bundle", dependencies=[api])
+    def diagnostics_bundle() -> Response:
+        name = "opengrokbot-support-" + time.strftime("%Y%m%d-%H%M") + ".zip"
+        return Response(eng.doctor.bundle(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
     @app.get("/api/channels", dependencies=[api])
     def channels_list() -> dict:
         return {"channels": eng.channels.list(), "kinds": channels_mod.KINDS, "events": list(channels_mod.EVENTS), "default_events": channels_mod.DEFAULT_EVENTS}

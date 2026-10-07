@@ -851,6 +851,181 @@ class ChannelTests(Base):
         self.assertLessEqual(len(self.eng.channels.list()), 20)
 
 
+# ==================================================================================================== 9. thread branches
+class BranchTests(Base):
+    def conversation(self):
+        """q1 -> a1 (with a tool call and its result) -> q2 -> a2"""
+        bot, th = self.new_bot()
+        t = self.eng.threads
+        q1 = t.add(th["id"], "user", "user", "first question")
+        a1 = t.add(th["id"], bot["id"], "assistant", [{"type": "text", "text": "first answer"}, {"type": "tool_use", "id": "c1", "name": "memory_save", "input": {"text": "x"}}])
+        r1 = t.add(th["id"], bot["id"], "user", [{"type": "tool_result", "tool_use_id": "c1", "content": [{"type": "text", "text": "saved"}], "ui": {"status": "ok", "summary": "saved"}}], anchor=a1)
+        q2 = t.add(th["id"], "user", "user", [{"type": "text", "text": "second question"}, {"type": "image", "path": "shot.png", "media_type": "image/png"}])
+        a2 = t.add(th["id"], bot["id"], "assistant", "second answer")
+        return bot, th, (q1, a1, r1, q2, a2)
+
+    def texts(self, tid):
+        return [(i["type"], i.get("text") or i.get("tool")) for i in self.eng.threads.display(tid)]
+
+    def test_branch_from_here_copies_up_to_and_including_the_message(self):
+        bot, th, (q1, a1, r1, q2, a2) = self.conversation()
+        out = self.c.post(f"/api/threads/{th['id']}/fork", headers=self.h, json={"message_id": a1})
+        self.assertEqual(out.status_code, 200, out.text)
+        new = out.json()["thread"]
+        self.assertFalse(out.json()["started"])
+        self.assertNotEqual(new["id"], th["id"])
+        self.assertEqual(new["bot_id"], bot["id"])
+        self.assertTrue(new["title"].startswith("Branch: "))
+        self.assertEqual(self.texts(new["id"]), [("user", "first question"), ("assistant", "first answer"), ("tool", "memory_save")])
+        rows = self.eng.threads.rows(new["id"])
+        a1_new = next(r for r in rows if r["role"] == "assistant")
+        self.assertEqual([r["anchor"] for r in rows if r["anchor"]], [a1_new["id"]])    # the tool result stays attached to the copied assistant message
+        self.assertEqual(new["copied"], 3)
+        self.assertEqual(len(self.eng.threads.display(th["id"])), 5)                      # the original is untouched
+        hist, _, _ = self.eng.threads.llm_history(new["id"], bot["id"])
+        self.assertEqual([m["role"] for m in hist], ["user", "assistant", "user"])       # a valid tool_use / tool_result pair for the model
+
+    def test_edit_and_resend_replaces_a_message_and_starts_the_bot(self):
+        bot, th, (q1, a1, r1, q2, a2) = self.conversation()
+        fake = self.use([LLMResult(text="answer to the new wording")])
+        out = self.eng.branch_thread(th["id"], q2, text="a better second question")
+        self.assertTrue(out["started"])
+        nid = out["thread"]["id"]
+        wait_for(lambda: not self.eng.turns.is_busy(bot["id"]))
+        self.assertEqual([x for x in self.texts(nid) if x[0] in ("user", "assistant")],
+                         [("user", "first question"), ("assistant", "first answer"), ("user", "a better second question"), ("assistant", "answer to the new wording")])
+        sent = json.dumps(fake.calls[0]["messages"])
+        self.assertIn("a better second question", sent)
+        self.assertNotIn("second question\"", sent.replace("a better second question", ""))      # the original wording and its answer are not in the branch
+        self.assertNotIn("second answer", sent)
+        new_user = [r for r in self.eng.threads.rows(nid) if r["author"] == "user"][-1]
+        self.assertTrue(any(b.get("type") == "image" for b in json.loads(new_user["content"])))   # attachments are carried over
+        self.assertEqual(self.texts(th["id"])[-2:], [("user", "second question"), ("assistant", "second answer")])
+
+    def test_the_first_message_can_be_edited_too(self):
+        bot, th, ids = self.conversation()
+        out = self.eng.branch_thread(th["id"], ids[0], text="rewritten opening", run=False)
+        self.assertFalse(out["started"])
+        self.assertEqual(self.texts(out["thread"]["id"]), [("user", "rewritten opening")])
+
+    def test_refusals(self):
+        bot, th, (q1, a1, r1, q2, a2) = self.conversation()
+        other, oth = self.new_bot()
+        foreign = self.eng.threads.add(oth["id"], "user", "user", "not in the first thread")
+        from core.threads import ThreadError
+        for args, kw in (((th["id"], 999999), {}), ((th["id"], foreign), {}), (("nope", q1), {}), ((th["id"], a1), {"text": "assistants cannot be edited"}),
+                         ((th["id"], q1), {"text": "   "})):
+            with self.assertRaises(ThreadError, msg=str(args)):
+                self.eng.branch_thread(*args, **kw)
+        g = self.eng.messaging.create_group("Branch group", [bot["id"], other["id"]])
+        gm = self.eng.threads.add(g["thread_id"], "user", "user", "hello group")
+        with self.assertRaises(ThreadError):
+            self.eng.branch_thread(g["thread_id"], gm)
+        self.assertEqual(self.c.post(f"/api/threads/{th['id']}/fork", headers=self.h, json={"message_id": 999999}).status_code, 400)
+
+    def test_a_compaction_summary_travels_only_when_it_still_applies(self):
+        bot, th, (q1, a1, r1, q2, a2) = self.conversation()
+        self.eng.threads.set_summary(th["id"], "Earlier: the user asked a first question.", r1)
+        late = self.eng.branch_thread(th["id"], a2)["thread"]
+        self.assertEqual(self.eng.threads.get(late["id"])["summary"], "Earlier: the user asked a first question.")
+        rows = self.eng.threads.rows(late["id"])
+        upto = self.eng.threads.get(late["id"])["summary_upto"]
+        self.assertEqual([r["id"] for r in rows if r["id"] > upto and r["role"] == "user" and r["author"] == "user"], [rows[3]["id"]])   # only q2 is still "live" history
+        early = self.eng.branch_thread(th["id"], q1)["thread"]
+        self.assertFalse(self.eng.threads.get(early["id"])["summary"])                   # branching from before the summarised part leaves the summary behind
+
+
+# ==================================================================================================== 10. diagnostics
+class DiagnosticsTests(Base):
+    def by_id(self):
+        return {c["id"]: c for c in self.eng.doctor.run()["checks"]}
+
+    def test_every_check_reports_clearly(self):
+        rep = self.eng.doctor.run()
+        ids = {c["id"] for c in rep["checks"]}
+        for want in ("service", "database", "disk", "workspace", "secrets", "provider-default", "browser", "scheduler", "mobile", "updates", "logs", "turns", "approvals", "search", "channels", "history"):
+            self.assertIn(want, ids)
+        for c in rep["checks"]:
+            self.assertIn(c["status"], ("ok", "warn", "fail"))
+            self.assertTrue(c["title"] and c["detail"], c)
+            if c["status"] != "ok":
+                self.assertTrue(c["fix"], f"{c['id']} says something is wrong but not what to do")
+        self.assertEqual(sum(rep["summary"].values()), len(rep["checks"]))
+        got = self.by_id()
+        self.assertEqual(got["database"]["status"], "ok")
+        self.assertEqual(got["workspace"]["status"], "ok")
+        self.assertEqual(got["scheduler"]["status"], "ok")
+
+    def test_problems_are_noticed(self):
+        import shutil as sh
+        bot, _ = self.new_bot()
+        self.eng.db.insert("turns", {"id": f"old{next(_N)}", "bot_id": bot["id"], "thread_id": "x", "trigger": "user", "status": "running", "started_at": time.time() - 8 * 3600, "steps": 1})
+        self.eng.db.insert("approvals", {"id": f"ap{next(_N)}", "bot_id": bot["id"], "thread_id": "x", "turn_id": "x", "category": "send", "tool": "t", "summary": "old", "details": "{}",
+                                         "status": "pending", "created_at": time.time() - 9 * 86400})
+        self.eng.settings.set("mobile", {"enabled": True, "host": "0.0.0.0", "port": 8765})
+        real = sh.disk_usage
+        sh.disk_usage = lambda p: type("U", (), {"total": 10, "used": 9, "free": 100 * 1024 * 1024})()
+        try:
+            got = self.by_id()
+        finally:
+            sh.disk_usage = real
+            self.eng.settings.set("mobile", {"enabled": True, "host": "127.0.0.1", "port": 8765})
+        self.assertEqual(got["turns"]["status"], "warn")
+        self.assertEqual(got["approvals"]["status"], "warn")
+        self.assertEqual(got["mobile"]["status"], "warn")
+        self.assertEqual(got["disk"]["status"], "fail")
+        self.eng.db.execute("DELETE FROM turns WHERE started_at<?", (time.time() - 7 * 3600,))
+        self.eng.db.execute("DELETE FROM approvals WHERE created_at<?", (time.time() - 8 * 86400,))
+
+    def test_a_crashing_check_does_not_stop_the_others(self):
+        from core.doctor import Doctor
+        orig = Doctor._disk
+        Doctor._disk = lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            got = self.by_id()
+        finally:
+            Doctor._disk = orig
+        self.assertEqual(got["disk"]["status"], "warn")
+        self.assertIn("could not run", got["disk"]["detail"])
+        self.assertEqual(got["database"]["status"], "ok")
+
+    def test_scrub_removes_secret_shapes(self):
+        from core.doctor import scrub
+        raw = ("POST /hooks/abc123/SuperSecretValue_xyz gbt_abcdefghijklmnopqrstuvwxyz0123 bot 1234567890:AAH-abcdefghijklmnopqrstuvwxyz0123456 "
+               "https://user:pa55@example.com/x ?token=hunter22&x=1 sk-ant-api03-abcdefghijklmnopqrstuvwxyz Bearer abcdefghijklmnopqrstuvwxyz123456")
+        out = scrub(raw)
+        for secret in ("SuperSecretValue", "gbt_abc", "AAH-abc", "pa55", "hunter22", "sk-ant-api03", "abcdefghijklmnopqrstuvwxyz123456"):
+            self.assertNotIn(secret, out)
+        self.assertIn("/hooks/[REDACTED]/[REDACTED]", out)
+
+    def test_the_support_bundle_holds_no_private_data(self):
+        bot, th = self.new_bot("Confidential Bot")
+        self.eng.threads.add(th["id"], "user", "user", "PRIVATE-CHAT-MARKER do not leak")
+        self.eng.memory.add(bot["id"], "fact", "PRIVATE-MEMORY-MARKER")
+        self.eng.log.error("something failed calling https://hooks.example.com/hooks/IDIDID/WEBHOOKSECRET with gbt_abcdefghijklmnopqrstuvwxyz0123")
+        for h in self.eng.log.handlers:
+            h.flush()
+        self.eng.settings.set("channels", [{"id": "c1", "kind": "slack", "name": "CHANNEL-NAME-MARKER", "enabled": True, "config": {"chat_id": "CHAT-ID-MARKER"}, "events": ["error"], "last_status": "ok"}])
+        r = self.c.get("/api/diagnostics/bundle", headers=self.h)
+        self.assertEqual(r.status_code, 200)
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        self.assertEqual(sorted(z.namelist()), ["README.txt", "checks.json", "info.json", "service.log", "settings.json"])
+        blob = "\n".join(z.read(n).decode("utf-8", "replace") for n in z.namelist())
+        for marker in ("PRIVATE-CHAT-MARKER", "PRIVATE-MEMORY-MARKER", "WEBHOOKSECRET", "gbt_abcdefghijkl", "CHANNEL-NAME-MARKER", "CHAT-ID-MARKER"):
+            self.assertNotIn(marker, blob, marker)
+        self.assertIn("something failed calling", z.read("service.log").decode())
+        info = json.loads(z.read("info.json"))
+        self.assertEqual(info["version"], __import__("core").VERSION)
+        self.eng.settings.set("channels", [])
+
+    def test_api_and_token_scopes(self):
+        self.assertEqual(self.c.get("/api/diagnostics", headers=self.h).json()["version"], __import__("core").VERSION)
+        t = self.c.post("/api/tokens", headers=self.h, json={"name": "diag", "scope": "full"}).json()
+        hdr = {"Authorization": f"Bearer {t['token']}"}
+        self.assertEqual(self.c.get("/api/diagnostics", headers=hdr).status_code, 200)                 # the checks are fine to read
+        self.assertEqual(self.c.get("/api/diagnostics/bundle", headers=hdr).status_code, 403)          # the bundle (with log lines) needs the main token
+
+
 # ==================================================================================================== 4. API tokens
 class ApiTokenTests(Base):
     def make(self, scope, name=None, days=0):
