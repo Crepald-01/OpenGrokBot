@@ -25,8 +25,9 @@ def kind_of(path: Path) -> str:
 
 
 class Files:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, history=None):
         self.root = Path(root).resolve()
+        self.history = history   # a FileHistory: a file deleted from the Files page can be brought back
 
     # -- paths ------------------------------------------------------------------
     def resolve(self, rel: str = "") -> Path:
@@ -162,4 +163,6 @@ class Files:
             raise FileError("The workspace itself cannot be deleted.")
         if not p.is_file():
             raise FileError("Only files can be deleted here, not folders.")
+        if self.history is not None:
+            self.history.snapshot(p, "deleted in Files")
         p.unlink()

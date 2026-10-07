@@ -51,6 +51,7 @@ class Computer:
         self.browser = BrowserHost(settings, net, events)
         self.browser.on_event = lambda t, d: self.events.publish(t, **d)
         self.workspace = paths.workspace_dir()
+        self.history = None   # a FileHistory, set by the engine: old contents are kept before files are overwritten, deleted or moved over
         self.terminal_log: deque[dict] = deque(maxlen=200)
         self._takeovers: dict[str, threading.Event] = {}
         self._tk_lock = threading.Lock()
@@ -97,17 +98,21 @@ class Computer:
             raise ComputerError(f"{path} looks like a binary file ({f.stat().st_size} bytes).")
         return data.decode("utf-8", errors="replace"), trunc
 
-    def write_file(self, path: str, content: str, append: bool = False) -> Path:
+    def write_file(self, path: str, content: str, append: bool = False, who: str = "") -> Path:
         f, _ = self.resolve(path)
+        if self.history is not None and f.is_file():
+            self.history.snapshot(f, "appended to" if append else "overwritten", who)
         f.parent.mkdir(parents=True, exist_ok=True)
         with open(f, "a" if append else "w", encoding="utf-8", newline="") as fh:
             fh.write(content)
         return f
 
-    def delete(self, path: str) -> None:
+    def delete(self, path: str, who: str = "") -> None:
         f, inside = self.resolve(path)
         if f == self.workspace.resolve():
             raise ComputerError("Refusing to delete the workspace root.")
+        if self.history is not None and f.exists():
+            self.history.snapshot_tree(f, "deleted", who)
         if f.is_dir():
             shutil.rmtree(f)
         elif f.exists():
@@ -115,11 +120,13 @@ class Computer:
         else:
             raise ComputerError(f"{path} does not exist.")
 
-    def move(self, src: str, dst: str) -> Path:
+    def move(self, src: str, dst: str, who: str = "") -> Path:
         a, _ = self.resolve(src)
         b, _ = self.resolve(dst)
         if not a.exists():
             raise ComputerError(f"{src} does not exist.")
+        if self.history is not None and b.exists():
+            self.history.snapshot_tree(b, "replaced by a move", who)
         b.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(a), str(b))
         return b

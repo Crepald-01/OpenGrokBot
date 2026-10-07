@@ -206,6 +206,189 @@ class KnowledgeTests(Base):
         self.assertEqual(self.c.get("/api/knowledge/search", headers=self.h, params={"q": "wifi password"}).json()["hits"], [])
 
 
+# ==================================================================================================== 3. file history
+class FileHistoryTests(Base):
+    def test_versions_are_kept_on_overwrite_append_delete_and_move(self):
+        comp, fh = self.eng.computer, self.eng.filehistory
+        comp.write_file("hist/a.txt", "version one")
+        self.assertEqual(fh.versions("hist/a.txt"), [])                            # a brand-new file has nothing to keep yet
+        comp.write_file("hist/a.txt", "version two")
+        comp.write_file("hist/a.txt", " + tail", append=True)
+        vs = fh.versions("hist/a.txt")
+        self.assertEqual([fh.read(v["id"]).decode() for v in vs], ["version two", "version one"])
+        self.assertEqual([v["reason"] for v in vs], ["appended to", "overwritten"])
+        comp.write_file("hist/b.txt", "to be replaced by a move")
+        comp.write_file("hist/c.txt", "mover")
+        comp.move("hist/c.txt", "hist/b.txt")
+        self.assertEqual(fh.read(fh.versions("hist/b.txt")[0]["id"]).decode(), "to be replaced by a move")
+        comp.delete("hist/a.txt")
+        self.assertFalse((comp.workspace / "hist" / "a.txt").exists())
+        gone = [d for d in fh.deleted() if d["path"] == "hist/a.txt"]
+        self.assertEqual(len(gone), 1)
+        self.assertEqual(fh.read(gone[0]["version_id"]).decode(), "version two + tail")
+
+    def test_restore_brings_back_deleted_files_and_can_itself_be_undone(self):
+        comp, fh = self.eng.computer, self.eng.filehistory
+        comp.write_file("hist/r.txt", "original")
+        comp.write_file("hist/r.txt", "edited")
+        first = fh.versions("hist/r.txt")[0]["id"]                                 # "original"
+        out = fh.restore("hist/r.txt", first)
+        self.assertEqual((comp.workspace / "hist" / "r.txt").read_text(), "original")
+        self.assertEqual(out["path"], "hist/r.txt")
+        self.assertEqual(fh.read(fh.versions("hist/r.txt")[0]["id"]).decode(), "edited")   # the edit it replaced is kept: restore is undoable
+        comp.delete("hist/r.txt")
+        d = next(x for x in fh.deleted() if x["path"] == "hist/r.txt")
+        fh.restore("hist/r.txt", d["version_id"])
+        self.assertEqual((comp.workspace / "hist" / "r.txt").read_text(), "original")
+        self.assertFalse(any(x["path"] == "hist/r.txt" for x in fh.deleted()))   # no longer listed as deleted
+        from core.filehistory import HistoryError
+        with self.assertRaises(HistoryError):
+            fh.restore("hist/other.txt", first)                                    # a version cannot be restored onto a different file
+        with self.assertRaises(HistoryError):
+            fh.restore("../escape.txt", first)
+
+    def test_identical_content_is_stored_once_and_old_versions_are_pruned(self):
+        comp, fh = self.eng.computer, self.eng.filehistory
+        comp.write_file("hist/same.txt", "x")
+        for _ in range(3):
+            comp.write_file("hist/same.txt", "x")                                  # rewriting the same content adds nothing
+        self.assertEqual(len(fh.versions("hist/same.txt")), 1)
+        for i in range(30):
+            comp.write_file("hist/many.txt", f"revision {i}")
+        vs = fh.versions("hist/many.txt")
+        self.assertEqual(len(vs), 20)
+        self.assertEqual(fh.read(vs[0]["id"]).decode(), "revision 28")
+        shas = {v["sha"] for v in vs}
+        blobs = {p.name for p in (paths.data_dir() / "history").rglob("*") if p.is_file()}
+        self.assertTrue(shas <= blobs)
+        self.assertFalse("revision 0" in "".join(fh.read(v["id"]).decode() for v in vs))     # the oldest were dropped with their data
+
+    def test_files_outside_the_workspace_and_oversized_files_are_ignored(self):
+        fh = self.eng.filehistory
+        outside = Path(tempfile.mkdtemp(prefix="gbtest-out-")) / "o.txt"
+        outside.write_text("not in the workspace")
+        self.assertIsNone(fh.snapshot(outside, "x"))
+        big = self.eng.computer.workspace / "hist" / "big.bin"
+        big.parent.mkdir(parents=True, exist_ok=True)
+        big.write_bytes(b"a" * 5_100_000)
+        self.assertIsNone(fh.snapshot(big, "x"))
+        empty = self.eng.computer.workspace / "hist" / "empty.txt"
+        empty.write_text("")
+        self.assertIsNone(fh.snapshot(empty, "x"))
+
+    def test_deleting_a_folder_keeps_every_file_in_it(self):
+        comp, fh = self.eng.computer, self.eng.filehistory
+        for n in ("one", "two", "three"):
+            comp.write_file(f"hist/folder/{n}.txt", f"content of {n}")
+        comp.delete("hist/folder")
+        gone = {d["path"] for d in fh.deleted()}
+        self.assertTrue({"hist/folder/one.txt", "hist/folder/two.txt", "hist/folder/three.txt"} <= gone)
+
+    def test_a_bot_overwriting_a_file_is_recorded_with_its_name(self):
+        bot, th = self.new_bot()
+        (self.eng.computer.workspace / "hist").mkdir(exist_ok=True)
+        (self.eng.computer.workspace / "hist" / "bot.txt").write_text("before the bot")
+        self.use([LLMResult(tool_calls=[ToolCall("t1", "fs_write", {"path": "hist/bot.txt", "content": "after the bot"})]), LLMResult(text="ok")])
+        self.eng.send_user_message(th["id"], "go")
+        self.assertTrue(wait_for(lambda: self.eng.approvals.pending_count() > 0))
+        a = self.eng.approvals.list("pending", bot["id"])[0]
+        self.eng.approvals.decide(a["id"], True)
+        self.assertTrue(wait_for(lambda: not self.eng.turns.is_busy(bot["id"])))
+        v = self.eng.filehistory.versions("hist/bot.txt")[0]
+        self.assertEqual((v["bot_id"], v["bot_name"], v["reason"]), (bot["id"], bot["name"], "overwritten"))
+
+    def test_api_and_the_files_page_delete(self):
+        ws = self.eng.computer.workspace
+        (ws / "hist").mkdir(exist_ok=True)
+        (ws / "hist" / "api.txt").write_text("api original")
+        self.assertEqual(self.c.delete("/api/ws/file", headers=self.h, params={"path": "hist/api.txt"}).status_code, 200)      # deleted from the Files page
+        d = self.c.get("/api/ws/deleted", headers=self.h).json()["entries"]
+        entry = next(e for e in d if e["path"] == "hist/api.txt")
+        self.assertEqual(entry["reason"], "deleted in Files")
+        pv = self.c.get("/api/ws/version", headers=self.h, params={"id": entry["version_id"]}).json()
+        self.assertEqual((pv["text"], pv["binary"]), ("api original", False))
+        r = self.c.post("/api/ws/restore", headers=self.h, json={"path": "hist/api.txt", "version_id": entry["version_id"]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual((ws / "hist" / "api.txt").read_text(), "api original")
+        hist = self.c.get("/api/ws/history", headers=self.h, params={"path": "hist/api.txt"}).json()
+        self.assertEqual(len(hist["versions"]), 1)
+        self.assertEqual(self.c.post("/api/ws/restore", headers=self.h, json={"path": "hist/api.txt", "version_id": 99999}).status_code, 400)
+        self.assertEqual(self.c.get("/api/ws/history", headers=self.h, params={"path": "../x"}).status_code, 400)
+
+
+# ==================================================================================================== 4. API tokens
+class ApiTokenTests(Base):
+    def make(self, scope, name=None, days=0):
+        r = self.c.post("/api/tokens", headers=self.h, json={"name": name or f"t-{next(_N)}", "scope": scope, "days": days})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def hdr(self, tok):
+        return {"Authorization": f"Bearer {tok['token']}"}
+
+    def test_a_token_is_shown_once_and_only_its_hash_is_kept(self):
+        t = self.make("read", "dashboard")
+        self.assertTrue(t["token"].startswith("gbt_") and len(t["token"]) > 30)
+        listing = self.c.get("/api/tokens", headers=self.h).json()["tokens"]
+        row = next(x for x in listing if x["id"] == t["id"])
+        self.assertNotIn("token", row)
+        self.assertNotIn("hash", row)
+        self.assertEqual(row["prefix"], t["token"][:8])
+        stored = self.eng.db.one("SELECT hash FROM api_tokens WHERE id=?", (t["id"],))["hash"]
+        self.assertNotEqual(stored, t["token"])
+        self.assertNotIn(t["token"], json.dumps(self.eng.db.query("SELECT * FROM api_tokens")))
+
+    def test_read_chat_and_full_scopes(self):
+        read, chat, full = self.make("read"), self.make("chat"), self.make("full")
+        bot, th = self.new_bot()
+        self.use([LLMResult(text="hi")] * 4)
+        # read: look but do not touch
+        self.assertEqual(self.c.get("/api/bots", headers=self.hdr(read)).status_code, 200)
+        self.assertEqual(self.c.post(f"/api/threads/{th['id']}/messages", headers=self.hdr(read), json={"text": "hello"}).status_code, 403)
+        # chat: may also send messages, nothing else
+        self.assertEqual(self.c.post(f"/api/threads/{th['id']}/messages", headers=self.hdr(chat), json={"text": "hello"}).status_code, 200)
+        wait_for(lambda: not self.eng.turns.is_busy(bot["id"]))
+        self.assertEqual(self.c.post("/api/bots", headers=self.hdr(chat), json={"name": "Nope"}).status_code, 403)
+        # full: may change things...
+        made = self.c.post("/api/bots", headers=self.hdr(full), json={"name": f"ByApi{next(_N)}", "job": "x"})
+        self.assertEqual(made.status_code, 200, made.text)
+        # ...but not the sensitive areas, which need the main token
+        for method, path in (("get", "/api/tokens"), ("post", "/api/tokens"), ("get", "/api/backup"), ("put", "/api/settings"), ("post", "/api/computer/terminal"),
+                             ("post", "/api/approvals/x/decide"), ("put", "/api/providers/anthropic"), ("delete", "/api/rules/1"), ("post", "/api/triggers")):
+            r = getattr(self.c, method)(path, headers=self.hdr(full), **({"json": {}} if method in ("post", "put") else {}))
+            self.assertEqual(r.status_code, 403, f"{method} {path}")
+        self.assertEqual(self.c.get("/api/tokens", headers=self.h).status_code, 200)         # the main token still can
+
+    def test_revoked_expired_and_wrong_tokens_are_refused(self):
+        t = self.make("full")
+        self.assertEqual(self.c.get("/api/bots", headers=self.hdr(t)).status_code, 200)
+        self.assertEqual(self.c.delete(f"/api/tokens/{t['id']}", headers=self.h).status_code, 200)
+        self.assertEqual(self.c.get("/api/bots", headers=self.hdr(t)).status_code, 401)
+        short = self.make("read", days=1)
+        self.eng.db.update("api_tokens", short["id"], {"expires_at": time.time() - 5})
+        self.assertEqual(self.c.get("/api/bots", headers=self.hdr(short)).status_code, 401)
+        self.assertEqual(self.c.get("/api/bots", headers={"Authorization": "Bearer gbt_not-a-real-token"}).status_code, 401)
+        flags = {x["id"]: x for x in self.c.get("/api/tokens", headers=self.h).json()["tokens"]}
+        self.assertTrue(flags[t["id"]]["revoked"])
+        self.assertTrue(flags[short["id"]]["expired"])
+
+    def test_last_used_is_recorded_and_a_token_cannot_log_in_for_a_cookie(self):
+        t = self.make("read")
+        self.c.get("/api/bots", headers=self.hdr(t))
+        row = next(x for x in self.c.get("/api/tokens", headers=self.h).json()["tokens"] if x["id"] == t["id"])
+        self.assertGreater(row["last_used_at"], 0)
+        self.assertEqual(self.c.post("/api/login", json={"token": t["token"]}).status_code, 401)   # the web login only takes the main access token
+
+    def test_bad_input_and_the_limit(self):
+        self.assertEqual(self.c.post("/api/tokens", headers=self.h, json={"name": "", "scope": "read"}).status_code, 400)
+        self.assertEqual(self.c.post("/api/tokens", headers=self.h, json={"name": "x", "scope": "root"}).status_code, 400)
+        from core import apitokens as at
+        self.assertFalse(at.allowed("full", "GET", "/api/tokens"))
+        self.assertTrue(at.allowed("read", "GET", "/api/bots"))
+        self.assertFalse(at.allowed("read", "POST", "/api/bots"))
+        self.assertFalse(at.allowed("chat", "POST", "/api/threads/abc/stop"))
+
+
 # ==================================================================================================== 2. model fallback
 class FallbackTests(Base):
     def route(self, primary, backup):

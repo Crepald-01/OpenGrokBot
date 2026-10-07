@@ -9,12 +9,14 @@ from typing import Any
 
 from . import VERSION, backup, commands, notify as notifier, paths, quiet
 from .actionlog import ActionLog
+from .apitokens import ApiTokens
 from .agent import AgentRun, TurnManager, run_reflection
 from .approvals import ApprovalManager
 from .bots import Bots
 from .computer import Computer
 from .db import Database, new_id, now
 from .digest import Digest
+from .filehistory import FileHistory
 from .files import Files
 from .knowledge import Knowledge
 from .events import EventBus
@@ -67,10 +69,13 @@ class Engine:
         self.approvals = ApprovalManager(self.db, self.events, self.settings, self.admin)
         self.approvals.engine = self
         self.computer = Computer(self.db, self.settings, self.net, self.events)
-        self.files = Files(self.computer.workspace)
+        self.filehistory = FileHistory(self.db, self.computer.workspace, paths.data_dir() / "history")
+        self.computer.history = self.filehistory
+        self.files = Files(self.computer.workspace, self.filehistory)
         self.threads = Threads(self.db, self.events, self.bots.names, self.describe_tool)
         self.search = Search(self.db, self.bots.names)
         self.knowledge = Knowledge(self.db)
+        self.apitokens = ApiTokens(self.db)
         self.digest = Digest(self)
         self.updates = Updates(self.settings)
         self.mcp = McpManager(self.db, self.admin)

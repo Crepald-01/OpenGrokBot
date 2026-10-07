@@ -327,7 +327,7 @@ def builtin_tools(eng: "Engine") -> list[ToolSpec]:
         risk=lambda ctx, a: r_outside(a, "Read"), label=lambda a: f"Read {a.get('path')}")
 
     def fs_write(ctx: ToolContext, a: dict) -> ToolResult:
-        f = comp.write_file(a["path"], a["content"], bool(a.get("append")))
+        f = comp.write_file(a["path"], a["content"], bool(a.get("append")), who=ctx.bot["id"])
         return ToolResult(f"Wrote {len(a['content'])} characters to {rel(f)}.", path=str(f))
 
     def r_write(ctx: ToolContext, a: dict) -> Risk | None:
@@ -343,7 +343,7 @@ def builtin_tools(eng: "Engine") -> list[ToolSpec]:
         label=lambda a: f"Write {a.get('path')}")
 
     def fs_delete(ctx: ToolContext, a: dict) -> ToolResult:
-        comp.delete(a["path"])
+        comp.delete(a["path"], who=ctx.bot["id"])
         return ToolResult(f"Deleted {a['path']}.")
 
     def r_delete(ctx: ToolContext, a: dict) -> Risk:
@@ -355,7 +355,7 @@ def builtin_tools(eng: "Engine") -> list[ToolSpec]:
     add("fs_delete", "Delete a file or folder. Always needs approval.", {"path": s("Path")}, ["path"], fs_delete, risk=r_delete, label=lambda a: f"Delete {a.get('path')}")
 
     def fs_move(ctx: ToolContext, a: dict) -> ToolResult:
-        f = comp.move(a["src"], a["dst"])
+        f = comp.move(a["src"], a["dst"], who=ctx.bot["id"])
         return ToolResult(f"Moved to {rel(f)}.")
 
     def r_move(ctx: ToolContext, a: dict) -> Risk | None:

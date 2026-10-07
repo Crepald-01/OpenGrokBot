@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from core import VERSION, backup as backup_mod, commands, packages, paths, secrets, skills as skills_mod
+from core import VERSION, apitokens, backup as backup_mod, commands, packages, paths, secrets, skills as skills_mod
 from core.browser import BrowserError
 from core.bots import BotError
 from core.computer import ComputerError
@@ -78,10 +78,28 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             fails[ip].append(now)
         return ok
 
+    def identify(tok: str, ip: str) -> str | None:
+        """"main" for the access token, the scope for a valid API token, None for anything else. Failures count towards the same lockout."""
+        now = time.time()
+        recent = [t for t in fails.get(ip, []) if now - t < 300]
+        fails[ip] = recent
+        if len(recent) >= 10:
+            raise HTTPException(429, "Too many failed attempts. Wait a few minutes.")
+        if tok and hmac.compare_digest(tok.encode(), token.encode()):
+            return "main"
+        row = eng.apitokens.verify(tok)
+        if row:
+            return row["scope"]
+        fails[ip].append(now)
+        return None
+
     def auth(request: Request) -> None:
         ip = request.client.host if request.client else "?"
-        if not check_token(presented(request), ip):
+        who = identify(presented(request), ip)
+        if who is None:
             raise HTTPException(401, "Missing or wrong access token.")
+        if who != "main" and not apitokens.allowed(who, request.method, request.url.path):
+            raise HTTPException(403, f"This API token ({who}) is not allowed to do that. Use the main access token for it.")
 
     api = Depends(auth)
 
@@ -848,6 +866,41 @@ def create_app(engine: Engine, token: str) -> FastAPI:
             finally:
                 eng.events.unsubscribe(sid)
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    # ------------------------------------------------------------------ API tokens
+    @app.get("/api/tokens", dependencies=[api])
+    def tokens_list() -> dict:
+        return {"tokens": eng.apitokens.list(), "scopes": list(apitokens.SCOPES)}
+
+    @app.post("/api/tokens", dependencies=[api])
+    def tokens_create(body: dict = Body(...)) -> dict:
+        return eng.apitokens.create(str(body.get("name", "")), str(body.get("scope", "read")), int(body.get("days", 0) or 0))
+
+    @app.delete("/api/tokens/{tid}", dependencies=[api])
+    def tokens_revoke(tid: str, delete: bool = False) -> dict:
+        (eng.apitokens.delete if delete else eng.apitokens.revoke)(tid)
+        return {"ok": True}
+
+    # ----------------------------------------------------------------- file history
+    @app.get("/api/ws/history", dependencies=[api])
+    def ws_history(path: str) -> dict:
+        return {"versions": eng.filehistory.versions(path), "stats": eng.filehistory.stats()}
+
+    @app.get("/api/ws/version", dependencies=[api])
+    def ws_version(id: int) -> dict:
+        return eng.filehistory.preview(id)
+
+    @app.post("/api/ws/restore", dependencies=[api])
+    def ws_restore(body: dict = Body(...)) -> dict:
+        return eng.filehistory.restore(str(body.get("path", "")), int(body.get("version_id", 0)))
+
+    @app.get("/api/ws/deleted", dependencies=[api])
+    def ws_deleted() -> dict:
+        names = {b["id"]: b["name"] for b in eng.bots.list(include_archived=True)}
+        rows = eng.filehistory.deleted()
+        for r in rows:
+            r["bot_name"] = names.get(r["bot_id"], "") if r["bot_id"] else ""
+        return {"entries": rows}
 
     # ------------------------------------------------------------- knowledge base
     @app.get("/api/knowledge", dependencies=[api])
