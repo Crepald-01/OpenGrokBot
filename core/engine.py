@@ -85,7 +85,7 @@ class Engine:
         self.digest = Digest(self)
         self.insights = Insights(self)
         self.doctor = Doctor(self)
-        self.updates = Updates(self.settings)
+        self.updates = Updates(self.settings, folder=paths.data_dir() / "updates")
         self.mcp = McpManager(self.db, self.admin)
         self.plugins = PluginManager(self)
         self.messaging = Messaging(self)

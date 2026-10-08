@@ -8,7 +8,7 @@ import time
 from PySide6.QtCore import QSize, Qt, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QTimeEdit, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QPlainTextEdit, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+                               QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressBar, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
 from core import paths
 from . import theme
@@ -16,11 +16,15 @@ from .api import Api, Connection, load_ui_config, save_ui_config
 from .model_picker import ModelPicker
 from .store import Store
 from .settings_extra import ApiAccessPanel, BackupModelPanel, ChannelsPanel, DiagnosticsPanel
-from .widgets import PageHeader, SideTabs, button, chip, label, page_layout, repolish
+from .widgets import PageHeader, SideTabs, button, card, chip, label, page_layout, repolish
 
 
 def lines(text: str) -> list[str]:
     return [l.strip() for l in text.splitlines() if l.strip()]
+
+
+def _mb(n: float) -> str:
+    return f"{n / 1024 / 1024:.1f}"
 
 
 def qr_pixmap(text: str, size: int = 220) -> QPixmap | None:
@@ -125,6 +129,7 @@ class SettingsPage(QWidget):
     switchConnection = Signal(object)
     toast = Signal(str, str)
     restartService = Signal()
+    quitForUpdate = Signal()   # an update is installing: the main window quits so the installer can replace the app
 
     def __init__(self, api: Api, store: Store):
         super().__init__()
@@ -153,6 +158,7 @@ class SettingsPage(QWidget):
         self.store.refresh_profiles()
         self.load()
         self.load_mobile()
+        self.refresh_update_card()
 
     # =========================================================== providers
     def _build_providers(self) -> None:
@@ -668,6 +674,8 @@ class SettingsPage(QWidget):
         row.addStretch(1)
         v.addLayout(row)
         v.addSpacing(6)
+        self._build_update_card(v)
+        v.addSpacing(6)
         v.addWidget(label("Backup and restore", h2=True))
         v.addWidget(label("A backup holds your Bots, chats, memory, routines, settings and skills in one zip. API keys and tokens stay in the Windows Credential Manager and are not included.", muted=True))
         self.a_ws = QCheckBox("Also include the shared workspace files")
@@ -675,7 +683,6 @@ class SettingsPage(QWidget):
         brow = QHBoxLayout()
         brow.addWidget(button("Back up…", icon="download", on=self.backup_now))
         brow.addWidget(button("Restore…", icon="upload", on=self.restore_backup))
-        brow.addWidget(button("Check for updates", on=self.check_updates))
         brow.addStretch(1)
         v.addLayout(brow)
         self.a_backup_msg = label("", muted=True)
@@ -761,17 +768,161 @@ class SettingsPage(QWidget):
             QTimer.singleShot(800, self.restartService.emit)
         self.api.request("POST", "/api/backup/restore", ok, lambda e: self.a_backup_msg.setText(e), content=data, timeout=300.0)
 
-    def check_updates(self) -> None:
-        self.a_backup_msg.setText("Checking…")
+    # ============================================================ updates card
+    def _build_update_card(self, v: QVBoxLayout) -> None:
+        v.addWidget(label("Updates", h2=True))
+        box = self.u_card = card("true")
+        g = QVBoxLayout(box)
+        g.setContentsMargins(theme.dp(18), theme.dp(16), theme.dp(18), theme.dp(16))
+        g.setSpacing(theme.dp(10))
+        self.u_title = label("", muted=True)
+        self.u_status = label("Press Check for updates to look for a new version.")
+        g.addWidget(self.u_title)
+        g.addWidget(self.u_status)
+        self.u_bar = QProgressBar()
+        self.u_bar.setTextVisible(False)
+        self.u_bar.setRange(0, 1)
+        self.u_prog = label("", muted=True)
+        self.u_error = label("")
+        self.u_error.setStyleSheet(f"color: {theme.palette()['bad']};")
+        for w in (self.u_bar, self.u_prog, self.u_error):
+            g.addWidget(w)
+            w.hide()
+        row = QHBoxLayout()
+        self.u_check = button("Check for updates", on=self.check_updates)
+        self.u_update = button("Update now", primary=True, on=self.start_update, tip="Download the new version and install it. OpenGrokBot restarts itself.")
+        self.u_release = button("Open release page", on=self.open_release)
+        for b in (self.u_check, self.u_update, self.u_release):
+            row.addWidget(b)
+        row.addStretch(1)
+        g.addLayout(row)
+        v.addWidget(box)
+        self.u_update.hide()
+        self.u_release.hide()
+        self._upd_state: dict = {}
+        self._upd_poll_busy = False
+        self._want_install = False     # set by "Update now": install as soon as the download is ready
+        self._installing = False
+        self._action_error = ""        # a failed download or install, shown until the next try
+        self._upd_poll = QTimer(self)
+        self._upd_poll.setInterval(700)
+        self._upd_poll.timeout.connect(self._poll_update)
 
-        def ok(d: dict) -> None:
-            if d.get("error") and not d.get("latest"):
-                self.a_backup_msg.setText("Could not check: " + d["error"])
-            elif d.get("newer"):
-                self.a_backup_msg.setText(f"{d['latest']} is available (you have {d['current']}): {d['url']}")
-            else:
-                self.a_backup_msg.setText(f"You are up to date ({d['current']}).")
-        self.api.get("/api/updates", ok, lambda e: self.a_backup_msg.setText(e), params={"refresh": "true"})
+    def _status(self, text: str, warn: bool = False) -> None:
+        self.u_status.setText(text)
+        self.u_status.setStyleSheet(f"color: {theme.palette()['warn']};" if warn else "")
+
+    def check_updates(self) -> None:
+        """A fresh check against GitHub (not the cached result)."""
+        self._action_error = ""
+        self._status("Checking…")
+        self.api.get("/api/updates", self.show_update_state, self._update_error, params={"refresh": "true"})
+
+    def refresh_update_card(self) -> None:
+        """Show the last known state; resumes a download that is still running."""
+        self.api.get("/api/updates", self.show_update_state, self._update_error)
+
+    def _update_error(self, msg: str) -> None:
+        self._upd_poll_busy = False
+        self._status("Could not check: " + msg, warn=True)
+
+    def _poll_update(self) -> None:
+        if self._upd_poll_busy:
+            return
+        self._upd_poll_busy = True
+        self.api.get("/api/updates", self.show_update_state, lambda _e: setattr(self, "_upd_poll_busy", False))
+
+    def show_update_state(self, d: dict) -> None:
+        """Render the state from GET /api/updates or a download reply. Starts the install once a wanted download is ready."""
+        self._upd_poll_busy = False
+        self._upd_state = d = d or {}
+        dl = d.get("download") or {}
+        st = dl.get("status") or "idle"
+        cur, latest = d.get("current") or "", d.get("latest") or ""
+        newer, can = bool(d.get("newer")), bool(d.get("can_install"))
+        if st == "error":
+            self._want_install = False
+        if st == "ready" and self._want_install and not self._installing:
+            self._want_install, self._installing = False, True
+            self.api.post("/api/updates/install", None, self._install_ok, self._install_fail)
+        busy = st == "downloading" or self._installing
+
+        self.u_title.setText(f"Installed: OpenGrokBot {cur}" if cur else "Installed: OpenGrokBot")
+        if self._installing:
+            self._status(f"Installing {latest or 'the update'}…")
+        elif d.get("error") and not latest:
+            self._status("Could not check: " + str(d["error"]), warn=True)
+        elif newer:
+            size = int(d.get("size") or 0)
+            self._status(f"{latest} is available (you have {cur})." + (f"  Download: {_mb(size)} MB." if size else ""))
+        elif latest or cur:
+            self._status(f"You are up to date ({cur}).")
+        else:
+            self._status("Press Check for updates to look for a new version.")
+
+        if self._installing:
+            self.u_bar.setRange(0, 0)
+            self.u_prog.setText("Starting the installer. OpenGrokBot will close and open again by itself.")
+        elif st == "downloading":
+            got, total = int(dl.get("got") or 0), int(dl.get("total") or 0)
+            self.u_bar.setRange(0, total)
+            self.u_bar.setValue(min(got, total) if total else 0)
+            self.u_prog.setText(f"Downloading… {_mb(got)} MB of {_mb(total)} MB" if total else f"Downloading… {_mb(got)} MB")
+        elif st == "ready":
+            self.u_prog.setText(f"Downloaded {dl.get('version') or latest}. Click Update now to install it.")
+        else:
+            self.u_prog.setText("")
+        show_progress = busy or st == "ready"
+        self.u_bar.setVisible(busy)
+        self.u_prog.setVisible(show_progress and bool(self.u_prog.text()))
+
+        if st == "error":
+            err = "Download failed: " + (dl.get("error") or "unknown error")
+        else:
+            err = self._action_error
+        self.u_error.setText(err)
+        self.u_error.setVisible(bool(err))
+
+        self.u_check.setEnabled(not busy)
+        self.u_update.setVisible(newer and can)
+        self.u_update.setEnabled(not busy)
+        self.u_update.setText("Try again" if (st == "error" or self._action_error) else "Update now")
+        self.u_release.setVisible(newer and not can)
+        self.u_release.setEnabled(bool(d.get("url")))
+
+        if st == "downloading":
+            if not self._upd_poll.isActive():
+                self._upd_poll.start()
+        else:
+            self._upd_poll.stop()
+
+    def start_update(self) -> None:
+        self._want_install = True
+        self._action_error = ""
+        self.u_update.setEnabled(False)
+        self.api.post("/api/updates/download", None, self.show_update_state, self._download_fail)
+
+    def _download_fail(self, msg: str) -> None:
+        self._want_install = False
+        self._action_error = "Could not download the update: " + msg
+        self.show_update_state(self._upd_state)
+
+    def _install_ok(self, d: dict) -> None:
+        if (d or {}).get("ok") is False:
+            self._install_fail("the installer did not start")
+            return
+        self.quitForUpdate.emit()   # the main window quits; the installer replaces the app and relaunches it
+        self.show_update_state(self._upd_state)
+
+    def _install_fail(self, msg: str) -> None:
+        self._installing = False
+        self._action_error = "Could not install the update: " + msg
+        self.show_update_state(self._upd_state)
+
+    def open_release(self) -> None:
+        url = self._upd_state.get("url") or ""
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
 
     # ============================================================ load values
     def load(self) -> None:

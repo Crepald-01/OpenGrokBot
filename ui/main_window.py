@@ -31,6 +31,7 @@ from .pages_usage_log import UsagePage
 from .quick_ask import QuickAsk
 from .store import Store
 from .takeover import TakeoverView
+from .update_flow import UpdateController
 from .widgets import Avatar, ImageCache, Toasts, button, card, chip, icon_button, label, repolish
 
 NAV = [("home", "Home", "home"), ("inbox", "Inbox", "inbox"), ("computer", "Computer", "computer"), ("files", "Files", "folder"), ("knowledge", "Knowledge", "book"), ("skills", "Skills", "skills"),
@@ -498,8 +499,10 @@ class MainWindow(QMainWindow):
         self.welcome.fromTemplate.connect(self.new_bot_from_template)
         self.welcome.openSettings.connect(lambda: self.select("page:settings"))
         self.chat = ChatPage(api, store, self.images)
+        self.updates = UpdateController(api, self)
+        self.destroyed.connect(lambda *_: self.updates.dispose())   # a theme change rebuilds the window: the old poller stops
         self.pages: dict[str, QWidget] = {
-            "home": HomePage(api, store), "inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "files": FilesPage(api, store), "knowledge": KnowledgePage(api, store), "skills": SkillsPage(api, store), "routines": AutomationsPage(api, store),
+            "home": HomePage(api, store, self.updates),"inbox": InboxPage(api, store), "computer": ComputerPage(api, store), "files": FilesPage(api, store), "knowledge": KnowledgePage(api, store), "skills": SkillsPage(api, store), "routines": AutomationsPage(api, store),
             "plugins": PluginsPage(api, store), "usage": UsagePage(api, store), "log": ActivityPage(api, store), "settings": SettingsPage(api, store),
         }
         for w in (self.welcome, self.chat, *self.pages.values()):
@@ -531,6 +534,9 @@ class MainWindow(QMainWindow):
         st.switchConnection.connect(self.reconnect.emit)
         st.restartService.connect(lambda: self.reconnect.emit("restart"))
         st.toast.connect(self.toast)
+        st.quitForUpdate.connect(lambda: self.quit_app(False))
+        self.updates.quitForUpdate.connect(lambda: self.quit_app(False))
+        self.updates.changed.connect(self.on_update_state)
 
         self.toasts = Toasts(self)
         for page in self.pages.values():
@@ -649,6 +655,13 @@ class MainWindow(QMainWindow):
         r.clicked.connect(lambda: self.select("page:settings"))
         self.rows["page:settings"] = r
         v.addWidget(r)
+        # an update row: not in self.rows (it is not a page), painted in the accent colour, hidden until there is a new version
+        self.update_row = NavRow("Update available", "download")
+        self.update_row.leading.setPixmap(icons.pixmap("download", theme.palette()["accent"], 18))  # type: ignore[union-attr]
+        self.update_row.title.setStyleSheet(f"color: {theme.palette()['accent']}; font-weight: 600;")
+        self.update_row.clicked.connect(lambda: self.select("page:home"))
+        self.update_row.hide()
+        v.addWidget(self.update_row)
         self.foot = label("", faint=True, wrap=False)
         self.foot.setContentsMargins(8, 2, 0, 0)
         v.addWidget(self.foot)
@@ -711,6 +724,20 @@ class MainWindow(QMainWindow):
             r.set_checked(k == self.current_key)
         if not self.store.bots and self.current_key.startswith("bot:"):
             self.show_welcome()
+
+    def on_update_state(self, d: dict) -> None:
+        """The sidebar item, and once per version a toast and a tray message. Skipped versions stay quiet."""
+        latest = d.get("latest") or ""
+        show = bool(d.get("newer")) and bool(latest) and not d.get("skipped")
+        self.update_row.title.setText(f"Update available · {latest}")
+        self.update_row.setVisible(show)
+        cfg = load_ui_config()
+        if show and cfg.get("notified_update") != latest:
+            save_ui_config({**cfg, "notified_update": latest})
+            self.toast(f"OpenGrokBot {latest} is available. Click Update now on the Home page.")
+            if self.tray:
+                self.last_notification = {"update": True}
+                self.tray.showMessage(f"OpenGrokBot {latest} is available", "Click Update now on the Home page.", QSystemTrayIcon.MessageIcon.Information, 9000)
 
     def set_connected(self, ok: bool) -> None:
         p = theme.palette()
@@ -1010,7 +1037,9 @@ class MainWindow(QMainWindow):
 
     def open_last_notification(self) -> None:
         n = self.last_notification
-        if n.get("thread_id"):
+        if n.get("update"):
+            self.select("page:home")
+        elif n.get("thread_id"):
             self.open_thread(n["thread_id"], n.get("bot_id", ""))
         else:
             self.show_window()

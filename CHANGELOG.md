@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.1 (unreleased)
+
+Updating is now one click, and you cannot miss that an update is out.
+
+- **Update now.** When a newer release is available, **Update now** downloads the installer, checks it against the SHA-256 that GitHub lists for it, closes the app and its background service, installs over the old version and opens the app again. Your Bots, chats, memory and settings are kept. A download that does not match its checksum is thrown away and never run. Nothing is downloaded until you press the button.
+- **Much more visible.** A bold update card at the top of Home, an **Update available** item at the bottom of the sidebar on every page, a notification when a new version first appears, and a proper Updates card in Settings > App with a progress bar.
+- **Sooner.** The app now looks for a new release every six hours instead of once a day.
+- API tokens cannot start an update.
+
 ## 2.0.0
 
 Ten major features. 2.0 turns Bots from helpers you talk to into a team you can set up, connect to other things and trust to recover.

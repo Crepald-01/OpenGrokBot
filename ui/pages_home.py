@@ -3,16 +3,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import re
+
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
-from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QTextBrowser, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QSizePolicy, QTextBrowser,
+                               QVBoxLayout, QWidget)
 
 from . import theme
-from .api import Api, load_ui_config, save_ui_config
+from .api import Api
 from .pages_inbox import fmt_time
 from .pages_usage_log import fmt_tokens
 from .store import Store
+from .update_flow import UpdateController
 from .widgets import Avatar, button, card, clear_layout, label, repolish
 
 STATE_TEXT = {"idle": "Idle", "work": "Working", "wait": "Needs you", "takeover": "You're driving"}
@@ -21,6 +24,19 @@ STATE_TEXT = {"idle": "Idle", "work": "Working", "wait": "Needs you", "takeover"
 def greeting() -> str:
     h = datetime.now().hour
     return "Good morning" if 5 <= h < 12 else "Good afternoon" if 12 <= h < 18 else "Good evening"
+
+
+def _mb(n: float) -> str:
+    return f"{n / 1024 / 1024:.1f}"
+
+
+def release_line(notes: str) -> str:
+    """The first non-empty line of the release notes, without markdown marks, one line long."""
+    for ln in (notes or "").splitlines():
+        t = re.sub(r"^[#>*\-\s]+", "", ln).replace("**", "").replace("`", "").strip()
+        if t:
+            return t if len(t) <= 120 else t[:119].rstrip() + "…"
+    return ""
 
 
 class DigestDialog(QDialog):
@@ -115,9 +131,10 @@ class HomePage(QWidget):
     openPage = Signal(str)
     newBot = Signal()
 
-    def __init__(self, api: Api, store: Store):
+    def __init__(self, api: Api, store: Store, updates: UpdateController | None = None):
         super().__init__()
         self.api, self.store = api, store
+        self.updates = updates
         self.actions: list[dict] = []
         self.today: dict[str, int] = {}
         outer = QVBoxLayout(self)
@@ -132,19 +149,44 @@ class HomePage(QWidget):
         v.setContentsMargins(36, 30, 36, 28)
         v.setSpacing(theme.dp(20))
 
-        self.banner = QFrame()
-        self.banner.setProperty("card", "question")
-        bl = QHBoxLayout(self.banner)
-        bl.setContentsMargins(18, 12, 12, 12)
-        bl.setSpacing(12)
-        self.banner_text = label("", wrap=False)
-        bl.addWidget(self.banner_text, 1)
-        self.banner_open = button("View release", on=self.open_release)
-        bl.addWidget(self.banner_open)
-        bl.addWidget(button("Dismiss", flat=True, on=self.dismiss_update))
-        self.banner.hide()
-        self.update_info: dict = {}
-        v.addWidget(self.banner)
+        # the update card: accent-coloured, first thing on Home; it shows the download and the restart while they run
+        p = theme.palette()
+        self.update_card = QFrame()
+        self.update_card.setObjectName("updateCard")
+        self.update_card.setStyleSheet(f"QFrame#updateCard {{ background: {p['accent_soft']}; border: 1px solid {p['accent_dim']}; "
+                                       f"border-left: 4px solid {p['accent']}; border-radius: 14px; }}")
+        ul = QHBoxLayout(self.update_card)
+        ul.setContentsMargins(20, 16, 20, 16)
+        ul.setSpacing(18)
+        left = QVBoxLayout()
+        left.setSpacing(6)
+        self.upd_title = label("", wrap=True)
+        self.upd_title.setStyleSheet(f"font-size: {theme.base_size() + 3}px; font-weight: 600;")
+        self.upd_notes = label("", muted=True, wrap=False)
+        self.upd_notes.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.upd_bar = QProgressBar()
+        self.upd_bar.setTextVisible(False)
+        self.upd_status = label("", muted=True)
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.upd_later = button("Later", on=self._update_later)
+        self.upd_news = button("What's new", flat=True, on=self._update_whats_new)
+        row.addWidget(self.upd_later)
+        row.addWidget(self.upd_news)
+        row.addStretch(1)
+        for w in (self.upd_title, self.upd_notes, self.upd_bar, self.upd_status):
+            left.addWidget(w)
+        left.addLayout(row)
+        ul.addLayout(left, 1)
+        self.upd_now = button("Update now", primary=True, on=self._update_now)
+        self.upd_now.setMinimumHeight(theme.dp(42))
+        self.upd_now.setMinimumWidth(theme.dp(172))
+        ul.addWidget(self.upd_now, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.update_card.hide()
+        v.addWidget(self.update_card)
+        if updates is not None:
+            updates.changed.connect(self.render_update)
+            self.render_update({})
 
         head = QHBoxLayout()
         col = QVBoxLayout()
@@ -224,6 +266,9 @@ class HomePage(QWidget):
         self.timer.stop()
 
     def load(self) -> None:
+        if self.updates is not None:
+            self.updates.poll()
+
         def usage(d: dict) -> None:
             self.today = d.get("today", {})
             lim, tot = d.get("limit", 0), d.get("total", 0)
@@ -243,28 +288,70 @@ class HomePage(QWidget):
         def digest(d: dict) -> None:
             self.digest_text.setText(d["headline"])
 
-        def updates(d: dict) -> None:
-            dismissed = load_ui_config().get("dismissed_update", "")
-            self.update_info = d
-            show = bool(d.get("newer")) and d.get("latest") != dismissed
-            self.banner.setVisible(show)
-            if show:
-                self.banner_text.setText(f"OpenGrokBot {d['latest']} is out. You have {d['current']}.")
         self.api.get("/api/digest", digest, lambda _e: None, params={"spec": "today"})
-        self.api.get("/api/updates", updates, lambda _e: None)
         self.api.get("/api/usage", usage)
         self.api.get("/api/actions", feed, params={"limit": 8})
         self.render()
 
-    def open_release(self) -> None:
-        if self.update_info.get("url"):
-            QDesktopServices.openUrl(QUrl(self.update_info["url"]))
+    # ---------------------------------------------------------------- update card
+    def _update_now(self) -> None:
+        if self.updates is not None:
+            self.updates.update_now()
 
-    def dismiss_update(self) -> None:
-        cfg = load_ui_config()
-        cfg["dismissed_update"] = self.update_info.get("latest", "")
-        save_ui_config(cfg)
-        self.banner.hide()
+    def _update_later(self) -> None:
+        if self.updates is not None:
+            self.updates.skip()
+
+    def _update_whats_new(self) -> None:
+        url = (self.updates.state.get("url") if self.updates is not None else "") or ""
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def render_update(self, d: dict | None = None) -> None:
+        """Everything on the card comes from the state dict (GET /api/updates, plus installing, skipped and action_error)."""
+        d = d or {}
+        dl = d.get("download") or {}
+        st = dl.get("status") or "idle"
+        latest, cur = d.get("latest") or "", d.get("current") or ""
+        installing = bool(d.get("installing"))
+        busy = installing or st == "downloading"
+        show = bool(d.get("newer")) and bool(latest) and (not d.get("skipped") or busy or st == "ready")
+        self.update_card.setVisible(show)
+        if not show:
+            return
+        self.upd_title.setText(f"OpenGrokBot {latest} is available (you have {cur})")
+        line = release_line(d.get("notes") or "")
+        self.upd_notes.setText(line)
+        self.upd_notes.setVisible(bool(line))
+
+        status, bad = "", False
+        self.upd_bar.setVisible(busy)
+        if installing:
+            self.upd_bar.setRange(0, 0)
+            status = "Installing… the app will restart"
+        elif st == "downloading":
+            got, total = int(dl.get("got") or 0), int(dl.get("total") or 0)
+            if total:
+                self.upd_bar.setRange(0, total)
+                self.upd_bar.setValue(min(got, total))
+                status = f"Downloading… {_mb(got)} MB of {_mb(total)} MB"
+            else:
+                self.upd_bar.setRange(0, 0)
+                status = f"Downloading… {_mb(got)} MB"
+        elif st == "ready":
+            status = "Downloaded. Click Update now to install it."
+        elif st == "error" or d.get("action_error"):
+            status, bad = str(d.get("action_error") or "Download failed: " + (dl.get("error") or "unknown error")), True
+        self.upd_status.setText(status)
+        self.upd_status.setVisible(bool(status))
+        self.upd_status.setStyleSheet(f"color: {theme.palette()['bad']};" if bad else "")
+
+        can = bool(d.get("can_install"))
+        self.upd_now.setVisible(not busy)
+        self.upd_now.setEnabled(True)
+        self.upd_now.setText("Try again" if bad else "Install now" if st == "ready" else "Update now" if can else "Open download page")
+        self.upd_later.setVisible(not busy)
+        self.upd_news.setVisible(bool(d.get("url")))
 
     # ---------------------------------------------------------------- render
     def render(self) -> None:

@@ -290,6 +290,22 @@ def create_app(engine: Engine, token: str) -> FastAPI:
     def updates(refresh: bool = False) -> dict:
         return eng.updates.check(force=True) if refresh else eng.updates.state()
 
+    @app.post("/api/updates/download", dependencies=[api])
+    def updates_download() -> dict:
+        from core.updates import UpdateError
+        try:
+            return eng.updates.start_download()
+        except UpdateError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/updates/install", dependencies=[api])
+    def updates_install() -> dict:
+        from core.updates import UpdateError
+        try:
+            return eng.updates.install()
+        except UpdateError as e:
+            raise HTTPException(400, str(e))
+
     @app.put("/api/pricing", dependencies=[api])
     def pricing_put(body: dict = Body(...)) -> dict:
         eng.usage.pricing.set_prices(body.get("models", {}), body.get("currency"))

@@ -145,6 +145,10 @@ If a Bot's model is rate limited, has an outage, cannot be reached or rejects it
 
 Right-click a message in a Bot's chat: **Branch from here** copies the conversation up to that point into a new thread; **Edit and resend as a new branch** (on your own messages) puts your new wording in place of the old one and lets the Bot answer it. The original thread is never changed.
 
+## Updating
+
+When a new version is out, Home shows an **Update now** card, the sidebar gets an **Update available** item and Settings > App shows an Updates card. **Update now** downloads the installer from the project's GitHub release, checks its SHA-256 against the one GitHub lists, then closes the app and the background service, installs over the old version and opens the app again. Your data is kept, and unfinished Bot tasks resume. If a release has no installer that can be checked this way, the button opens the release page instead. Turn the automatic check off in Settings > App.
+
 ## Adding plugins and MCP servers
 
 **Built-in connectors** (Plugins page): Gmail and Google Calendar (OAuth: create a *Desktop app* OAuth client in Google Cloud, enable the API, paste client id/secret, press **Connect**), Slack, Notion, Linear, Jira, GitHub, and a **generic REST connector**. Read tools run freely; anything that writes or sends asks for approval.

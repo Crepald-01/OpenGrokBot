@@ -1,8 +1,8 @@
 ; Inno Setup script for OpenGrokBot. Build with:  python build_installer.py
-; (or compile directly:  ISCC.exe /DAppVersion=2.0.0 installer\OpenGrokBot.iss)
+; (or compile directly:  ISCC.exe /DAppVersion=2.0.1 installer\OpenGrokBot.iss)
 
 #ifndef AppVersion
-  #define AppVersion "2.0.0"
+  #define AppVersion "2.0.1"
 #endif
 #ifndef DistDir
   #define DistDir "..\dist\OpenGrokBot"
@@ -61,8 +61,19 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\{#AppExe}"; Parameters: "--install-browsers"; StatusMsg: "Downloading the Chromium browser engine (about 150 MB), please wait..."; Tasks: chromium; Flags: waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+; An update started from inside the app (it passes /RELAUNCH) opens the app again when it is done.
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: HasParam('/RELAUNCH')
 
 [Code]
+function HasParam(const Param: String): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  for i := 1 to ParamCount do
+    if CompareText(ParamStr(i), Param) = 0 then Result := True;
+end;
+
 // The app and its background service are the same exe, so stop both before files are replaced or removed.
 // Unfinished Bot tasks are resumed by the service the next time it starts.
 procedure StopApp;
@@ -83,15 +94,6 @@ function InitializeUninstall(): Boolean;
 begin
   StopApp;
   Result := True;
-end;
-
-function HasParam(const Param: String): Boolean;
-var
-  i: Integer;
-begin
-  Result := False;
-  for i := 1 to ParamCount do
-    if CompareText(ParamStr(i), Param) = 0 then Result := True;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

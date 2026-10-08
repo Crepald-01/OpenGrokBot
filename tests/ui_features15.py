@@ -188,14 +188,14 @@ check(any("Researcher" in n for n in notes), "a slash command works from Quick A
 win.select("page:home")
 pump(2.0)
 home = win.pages["home"]
-check(home.banner.isVisibleTo(home) and "9.9.9" in home.banner_text.text(), f"Home shows the update banner ({home.banner_text.text()!r})")
+check(home.update_card.isVisibleTo(home) and "9.9.9" in home.upd_title.text(), f"Home shows the update card ({home.upd_title.text()!r})")
 check("Today" in home.digest_text.text() and "task" in home.digest_text.text(), f"Home shows today's digest line ({home.digest_text.text()!r})")
 shot(win, "f15-home")
-home.dismiss_update()
-check(not home.banner.isVisibleTo(home) and load_ui_config().get("dismissed_update") == "9.9.9", "Dismiss hides the banner and remembers it")
+home._update_later()
+check(not home.update_card.isVisibleTo(home) and load_ui_config().get("dismissed_update") == "9.9.9", "Dismiss hides the banner and remembers it")
 home.load()
 pump(1.5)
-check(not home.banner.isVisibleTo(home), "a dismissed update stays hidden")
+check(not home.update_card.isVisibleTo(home), "a dismissed update stays hidden")
 from ui.pages_home import DigestDialog  # noqa: E402
 dd = DigestDialog(api, win)
 dd.show()
