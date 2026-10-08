@@ -1,6 +1,6 @@
 """Uploads (or replaces) the installer on a GitHub release using the credential Git already has.
 
-    python scripts/publish_release_asset.py dist/OpenGrokBot-Setup-2.0.0.exe v2.0.0
+    python scripts/publish_release_asset.py dist/OpenGrokBot-Setup-2.0.1.exe v2.0.1
 
 The token is read from `git credential fill` and never printed.
 """

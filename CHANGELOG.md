@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.1 (unreleased)
+## 2.0.1
 
 Updating is now one click, and you cannot miss that an update is out.
 
