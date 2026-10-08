@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 (unreleased)
+## 2.0.0
 
 Ten major features. 2.0 turns Bots from helpers you talk to into a team you can set up, connect to other things and trust to recover.
 
