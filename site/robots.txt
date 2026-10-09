@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://crepald-01.github.io/OpenGrokBot/sitemap.xml

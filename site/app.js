@@ -92,13 +92,16 @@ if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: re
 
 /* ---- screenshot tabs ----------------------------------------------------------------------------------- */
 const img = $("#showimg"), cap = $("#showcap"), tabs = $$(".tab");
+const src = (t) => "img/" + t.dataset.img + "." + (t.dataset.ext || "png");
+const panel = $("#panel");
 function pick(tab) {
-  tabs.forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
+  tabs.forEach((t) => { const on = t === tab; t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1; });
+  panel.setAttribute("aria-labelledby", tab.id);
   img.style.opacity = 0;
   setTimeout(() => {
-    img.src = "img/" + tab.dataset.img + ".png";
+    img.src = src(tab);
     cap.textContent = tab.dataset.cap;
-    img.alt = "OpenGrokBot: " + tab.textContent.toLowerCase();
+    img.alt = tab.dataset.alt || "OpenGrokBot: " + tab.textContent.toLowerCase();
   }, 180);
   img.onload = () => (img.style.opacity = 1);
 }
@@ -111,7 +114,21 @@ tabs.forEach((t, i) => {
   });
 });
 // warm the cache so tab switches are instant
-setTimeout(() => tabs.forEach((t) => { const p = new Image(); p.src = "img/" + t.dataset.img + ".png"; }), 1500);
+setTimeout(() => tabs.forEach((t) => { const p = new Image(); p.src = src(t); }), 2500);
+
+/* ---- mobile menu --------------------------------------------------------------------------------------- */
+const menu = $("#menu"), links = $("#links");
+if (menu && links) {
+  const close = () => { links.classList.remove("open"); menu.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-label", "Open the menu"); };
+  menu.addEventListener("click", () => {
+    const open = links.classList.toggle("open");
+    menu.setAttribute("aria-expanded", String(open));
+    menu.setAttribute("aria-label", open ? "Close the menu" : "Open the menu");
+  });
+  links.addEventListener("click", (e) => { const a = e.target.closest("a"); if (!a) return; if (a.id === "theme2") { e.preventDefault(); $("#theme").click(); } close(); });
+  addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  matchMedia("(min-width: 821px)").addEventListener("change", close);
+}
 
 /* ---- copy buttons -------------------------------------------------------------------------------------- */
 $$("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
@@ -122,12 +139,13 @@ $$("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
   }
   const label = $("span", b), old = label.textContent;
   label.textContent = "Copied";
+  b.setAttribute("aria-live", "polite");
   setTimeout(() => (label.textContent = old), 1400);
 }));
 
 // ---- Visitor counter ------------------------------------------------------------------------------------
 // Anonymous, cookie-free: counts one visit per browser per day on abacus.jasoncameron.dev (no account needed).
-// Only a number is stored; no IP, no identifiers. If the service is down the footer simply shows nothing.
+// Only a number is stored on the service, but it is a third-party request (it sees the visitor's IP like any host), and the footer says so. If it is down the footer shows nothing.
 (function visitorCounter() {
   const NS = "opengrokbot-site", KEY = "visits", today = new Date().toISOString().slice(0, 10);
   const show = (n) => { const el = $("#visits"); if (el && Number.isFinite(n)) { $("#visits-n").textContent = n.toLocaleString(); el.hidden = false; } };
