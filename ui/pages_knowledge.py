@@ -2,19 +2,21 @@
 from __future__ import annotations
 
 import base64
+import html
 import os
-import time
+import re
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMessageBox, QPlainTextEdit, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMessageBox, QPlainTextEdit, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import theme
 from .api import Api
 from .pages_files import ago, human_size
 from .pages_inbox import fill_row, make_table
+from .pages_routines import EmptyState
 from .store import Store
-from .widgets import PageHeader, button, label, page_layout
+from .widgets import PageHeader, button, card, label, page_layout
 
 MAX_UPLOAD = 20_000_000
 FILE_FILTER = "Documents (*.txt *.md *.markdown *.csv *.tsv *.json *.log *.html *.htm *.xml *.yml *.yaml *.docx *.rst *.py *.js);;All files (*)"
@@ -26,8 +28,10 @@ class NoteDialog(QDialog):
         self.setWindowTitle("Add a note")
         self.resize(560, 420)
         v = QVBoxLayout(self)
+        v.setSpacing(theme.dp(12))
         v.addWidget(label("Paste or write anything you want your Bots to be able to look up: a policy, a checklist, how you like things done.", muted=True))
         f = QFormLayout()
+        f.setVerticalSpacing(theme.dp(10))
         self.name = QLineEdit()
         self.name.setPlaceholderText("e.g. Travel policy")
         self.text = QPlainTextEdit()
@@ -49,6 +53,72 @@ class NoteDialog(QDialog):
         self.accept()
 
 
+def highlight(text: str, query: str) -> str:
+    """Escape a passage and mark every word of the query in it (one pass, so marks never nest)."""
+    terms = sorted({t for t in query.split() if t}, key=len, reverse=True)
+    esc = html.escape(text)
+    if not terms:
+        return esc
+    pat = re.compile("|".join(re.escape(html.escape(t)) for t in terms), re.IGNORECASE)
+    mark = theme.palette()["accent_dim"]
+    return pat.sub(lambda m: f'<span style="background-color: {mark}; font-weight: 600;">{m.group(0)}</span>', esc)
+
+
+class HitCard(QFrame):
+    """One search result: the source name as a heading, where it sits, and the passage with the match highlighted."""
+
+    def __init__(self, hit: dict, query: str):
+        super().__init__()
+        self.setObjectName("hitcard")
+        v = QVBoxLayout(self)
+        v.setContentsMargins(theme.dp(16), theme.dp(12), theme.dp(16), theme.dp(14))
+        v.setSpacing(theme.dp(4))
+        v.addWidget(label(hit["name"], h2=True, wrap=False))
+        v.addWidget(label(f"Passage {hit['seq']}", muted=True, wrap=False))
+        snippet = " ".join(hit["snippet"].split())[:240]
+        body = QLabel(highlight(snippet, query))
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setWordWrap(True)
+        body.setContentsMargins(0, theme.dp(4), 0, 0)
+        v.addWidget(body)
+        for child in self.findChildren(QWidget):   # clicks fall through to the list row underneath
+            child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.set_selected(False)
+
+    def set_selected(self, on: bool) -> None:
+        p = theme.palette()
+        bg, bd = (p["select"], p["accent"]) if on else (p["panel"], p["line"])
+        self.setStyleSheet(f"QFrame#hitcard {{ background: {bg}; border: 1px solid {bd}; border-radius: {theme.dp(12)}px; }}")
+
+
+class HitList(QListWidget):
+    """Result list whose rows are cards: keeps each card as wide as the list, so its text wraps to the right height."""
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        self.refit()
+
+    def __init__(self):
+        super().__init__()
+        # the cards draw their own frame and selection, so the row padding and margins of the default item style are dropped here
+        self.setStyleSheet("QListWidget::item { padding: 0px; margin: 0px; border: none; background: transparent; }")
+
+    def refit(self) -> None:
+        for i in range(self.count()):
+            it = self.item(i)
+            c = self.itemWidget(it)
+            if isinstance(c, HitCard):
+                w = max(1, self.viewport().width() - theme.dp(16))   # leave the same inset on both sides of a card
+                it.setSizeHint(QSize(w, c.heightForWidth(w) or c.sizeHint().height()))
+        self.doItemsLayout()
+
+    def mark_selected(self, row: int) -> None:
+        for i in range(self.count()):
+            c = self.itemWidget(self.item(i))
+            if isinstance(c, HitCard):
+                c.set_selected(i == row)
+
+
 class KnowledgePage(QWidget):
     def __init__(self, api: Api, store: Store):
         super().__init__()
@@ -58,12 +128,14 @@ class KnowledgePage(QWidget):
         self.current: dict | None = None
         self.scope = QComboBox()
         self.scope.setToolTip("Who can find what you add next")
+        self.add_files_btn = button("Add files…", primary=True, icon="upload", on=self.add_files)
         self.add_note_btn = button("Add note…", icon="plus", on=self.add_note)
-        self.add_files_btn = button("Add files…", icon="upload", on=self.add_files)
         self.add_folder_btn = button("Add workspace folder…", icon="folder", on=self.add_folder)
         v = page_layout(self, PageHeader("Knowledge", "Documents your Bots can search and quote. Nothing leaves your PC: it is indexed locally, with no model call.",
-                                         [self.add_note_btn, self.add_files_btn, self.add_folder_btn]))
+                                         [self.add_files_btn, self.add_note_btn, self.add_folder_btn]))
+        v.setSpacing(theme.dp(20))
         bar = QHBoxLayout()
+        bar.setSpacing(theme.dp(10))
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search everything you added…")
         self.search.setProperty("search", True)
@@ -79,41 +151,51 @@ class KnowledgePage(QWidget):
         split = QSplitter(Qt.Orientation.Horizontal)
         left = QWidget()
         lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 0, 0)
-        lv.setSpacing(8)
+        lv.setContentsMargins(0, 0, theme.dp(8), 0)
+        lv.setSpacing(theme.dp(8))
         self.stack = QStackedWidget()
         self.table = make_table(["Name", "Shared with", "Passages", "Size", "Updated"], 0)
         self.table.itemSelectionChanged.connect(self._source_selected)
-        self.results = QListWidget()
-        self.results.setWordWrap(True)
+        self.results = HitList()
         self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.results.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.results.setSpacing(theme.dp(8))
         self.results.currentRowChanged.connect(self._hit_selected)
         self.stack.addWidget(self.table)
         self.stack.addWidget(self.results)
         lv.addWidget(self.stack, 1)
-        self.summary = label("", faint=True, wrap=False)
+        self.empty_none = EmptyState("book", "Add a note or a file to get started",
+                                     "Your Bots can search and quote anything you add here: a policy, a checklist, a handbook. Everything is indexed on this PC.",
+                                     [button("Add files…", primary=True, icon="upload", on=self.add_files), button("Add note…", icon="plus", on=self.add_note)])
+        self.empty_search = EmptyState("search", "No matches",
+                                       "Nothing in your knowledge base matches that search. Try other words, or add the document that should contain it.",
+                                       [button("Add files…", icon="upload", on=self.add_files)])
+        lv.addWidget(self.empty_none, 1)
+        lv.addWidget(self.empty_search, 1)
+        self.summary = label("", muted=True, wrap=False)
         lv.addWidget(self.summary)
         split.addWidget(left)
 
-        right = QWidget()
+        right = card("true")
+        self.preview = right
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(12, 0, 0, 0)
-        rv.setSpacing(8)
+        rv.setContentsMargins(theme.dp(20), theme.dp(18), theme.dp(20), theme.dp(16))
+        rv.setSpacing(theme.dp(8))
         self.p_title = label("", h2=True, wrap=False)
-        self.p_meta = label("", faint=True, wrap=False)
+        self.p_meta = label("", muted=True, wrap=False)
         rv.addWidget(self.p_title)
         rv.addWidget(self.p_meta)
+        rv.addSpacing(theme.dp(4))
         self.p_text = QPlainTextEdit()
         self.p_text.setReadOnly(True)
         self.p_text.setPlaceholderText("Select a document to read it, or search for something.")
         rv.addWidget(self.p_text, 1)
         actions = QHBoxLayout()
+        actions.setSpacing(theme.dp(8))
         self.refresh_btn = button("Refresh from workspace", icon="refresh", on=self.refresh_files, tip="Re-read workspace files that changed")
         self.del_btn = button("Remove", danger=True, icon="trash", on=self.remove_current)
         actions.addWidget(self.refresh_btn)
-        actions.addWidget(self.del_btn)
         actions.addStretch(1)
+        actions.addWidget(self.del_btn)
         rv.addLayout(actions)
         split.addWidget(right)
         split.setSizes([560, 520])
@@ -146,15 +228,31 @@ class KnowledgePage(QWidget):
         self.table.setRowCount(0)
         for s in self.sources:
             fill_row(self.table, [s["name"], s["bot_name"] and f"{s['bot_name']} only" or "All Bots", s["chunks"], human_size(s["size"]), ago(s["updated_at"])], s)
-        self.summary.setText(f"{st['sources']} document{'s' if st['sources'] != 1 else ''} · {st['passages']:,} passages" if st["sources"]
-                             else "Nothing added yet. Add a note, a few files or a workspace folder, and your Bots can look things up in it.")
+        self.summary.setText(f"{st['sources']} document{'s' if st['sources'] != 1 else ''} · {st['passages']:,} passages" if st["sources"] else "")
         if keep:
             for r in range(self.table.rowCount()):
                 if self.table.item(r, 0).data(Qt.ItemDataRole.UserRole)["id"] == keep:
                     self.table.selectRow(r)
+                    self._sync_views()
                     return
         if not self.search.text().strip():
             self._clear_preview()
+        self._sync_views()
+
+    def _sync_views(self) -> None:
+        """Pick what the left side shows: the list, the 'add something' state, or the 'no match' state. The preview only appears when there is something to preview."""
+        if self.search.text().strip():
+            none = not self.hits
+            self.stack.setVisible(not none)
+            self.empty_search.setVisible(none)
+            self.empty_none.setVisible(False)
+            self.preview.setVisible(not none)
+        else:
+            none = not self.sources
+            self.stack.setVisible(not none)
+            self.empty_none.setVisible(none)
+            self.empty_search.setVisible(False)
+            self.preview.setVisible(not none)
 
     # ------------------------------------------------------------------ preview
     def _source_selected(self) -> None:
@@ -192,20 +290,22 @@ class KnowledgePage(QWidget):
 
     def _got_hits(self, d: dict) -> None:
         self.hits = d["hits"]
+        q = self.search.text().strip()
         self.results.blockSignals(True)
         self.results.clear()
         for h in self.hits:
-            it = QListWidgetItem(f"{h['name']}  ·  passage {h['seq']}\n{' '.join(h['snippet'].split())[:200]}")
+            snippet = " ".join(h["snippet"].split())[:240]
+            it = QListWidgetItem(f"{h['name']}  ·  passage {h['seq']}\n{snippet}")
             self.results.addItem(it)
-        if not self.hits:
-            it = QListWidgetItem("Nothing in your knowledge base matches that.")
-            it.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.results.addItem(it)
+            self.results.setItemWidget(it, HitCard(h, q))
+        self.results.refit()
         self.results.blockSignals(False)
         self.stack.setCurrentWidget(self.results)
         self.summary.setText(f"{len(self.hits)} matching passage{'s' if len(self.hits) != 1 else ''}")
+        self._sync_views()
 
     def _hit_selected(self, row: int) -> None:
+        self.results.mark_selected(row)
         if 0 <= row < len(self.hits):
             h = self.hits[row]
             self.current = None

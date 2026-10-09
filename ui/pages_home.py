@@ -10,12 +10,13 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QSizePolicy, QTextBrowser,
                                QVBoxLayout, QWidget)
 
-from . import theme
+from . import theme, motion
 from .api import Api
 from .pages_inbox import fmt_time
 from .pages_usage_log import fmt_tokens
 from .store import Store
 from .update_flow import UpdateController
+from . import icons
 from .widgets import Avatar, button, card, clear_layout, label, repolish
 
 STATE_TEXT = {"idle": "Idle", "work": "Working", "wait": "Needs you", "takeover": "You're driving"}
@@ -92,14 +93,14 @@ class Tile(QFrame):
         self.setProperty("card", "tile")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         v = QVBoxLayout(self)
-        v.setContentsMargins(18, theme.dp(14), 18, theme.dp(14))
-        v.setSpacing(2)
+        v.setContentsMargins(18, theme.dp(16), 18, theme.dp(16))
+        v.setSpacing(4)
         self.caption = QLabel(caption.upper())
         self.caption.setProperty("eyebrow", True)
         self.value = QLabel("0")
-        self.value.setStyleSheet(f"font-size: {theme.base_size() + 15}px; font-weight: 600; letter-spacing: -0.5px;")
+        self.value.setStyleSheet(f"font-size: {theme.base_size() + 19}px; font-weight: 600; letter-spacing: -0.5px; padding-top: 2px;")
         self.sub = QLabel("")
-        self.sub.setProperty("faint", True)
+        self.sub.setProperty("muted", True)
         self.sub.setWordWrap(True)
         for w in (self.caption, self.value, self.sub):
             w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -107,7 +108,7 @@ class Tile(QFrame):
         self.bar: QProgressBar | None = None
 
     def set(self, value: str, sub: str = "", hot: bool = False) -> None:
-        self.value.setText(value)
+        motion.count_to(self.value, value)
         self.sub.setText(sub)
         self.setProperty("hot", hot)
         repolish(self)
@@ -371,6 +372,8 @@ class HomePage(QWidget):
         self.t_work.set(str(len(working)), ", ".join(b["name"] for b in working)[:60] or "nobody is busy")
 
         clear_layout(self.team)
+        if not s.bots:
+            self.team.addWidget(self._welcome(), 0, 0, 1, 2)
         for i, b in enumerate(s.bots):
             kind, text = s.state_of(b["id"])
             c = card("hover")
@@ -431,16 +434,43 @@ class HomePage(QWidget):
             self.need_box.addWidget(button(f"See all {len(s.approvals)}", flat=True, on=lambda: self.openPage.emit("inbox")))
         self.render_feed()
 
+    def _welcome(self) -> QWidget:
+        """Shown instead of an empty team: what a Bot is and one button to make the first one."""
+        c = card()
+        v = QVBoxLayout(c)
+        v.setContentsMargins(24, theme.dp(24), 24, theme.dp(24))
+        v.setSpacing(10)
+        ic = QLabel()
+        ic.setPixmap(icons.pixmap("bot", theme.palette()["accent"], 36))
+        v.addWidget(ic)
+        v.addWidget(label("Create your first Bot", h2=True, wrap=False))
+        v.addWidget(label("A Bot is a helper with its own job, memory and permissions. Give it a name and a job, and it will do the work and come back when it needs you.", muted=True))
+        row = QHBoxLayout()
+        row.addWidget(button("New Bot", primary=True, icon="plus", on=self.newBot.emit))
+        row.addStretch(1)
+        v.addLayout(row)
+        return c
+
     def render_feed(self) -> None:
         p = theme.palette()
         clear_layout(self.feed)
         if not self.actions:
-            self.feed.addWidget(label("Nothing yet. Bot actions show up here as they happen.", faint=True))
+            empty = QVBoxLayout()
+            empty.setContentsMargins(0, theme.dp(18), 0, theme.dp(18))
+            empty.setSpacing(8)
+            ic = QLabel()
+            ic.setPixmap(icons.pixmap("activity", p["faint"], 28))
+            ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.addWidget(ic)
+            tx = label("Nothing yet. Bot actions show up here as they happen.", muted=True)
+            tx.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.addWidget(tx)
+            self.feed.addLayout(empty)
             return
         dot = {"ok": p["ok"], "error": p["bad"], "denied": p["warn"], "blocked": p["warn"]}
         for a in self.actions:
             row = QHBoxLayout()
-            row.setContentsMargins(0, theme.dp(7), 0, theme.dp(7))
+            row.setContentsMargins(0, theme.dp(8), 0, theme.dp(8))
             row.setSpacing(10)
             d = QLabel()
             d.setFixedSize(8, 8)
@@ -449,7 +479,11 @@ class HomePage(QWidget):
             col = QVBoxLayout()
             col.setSpacing(0)
             what = a.get("url") or a.get("path") or ""
-            col.addWidget(label(f"{self.store.bot_name(a['bot_id'])}  ·  {a['tool']}", wrap=False))
-            col.addWidget(label(f"{fmt_time(a['ts'])}" + (f"  ·  {what[:46]}" if what else ""), faint=True, wrap=False))
+            who = label(f"{self.store.bot_name(a['bot_id'])}", wrap=False)
+            who.setStyleSheet("font-weight: 600;")
+            col.addWidget(who)
+            meta = label(f"{a['tool']}  ·  {fmt_time(a['ts'])}" + (f"  ·  {what[:46]}" if what else ""), muted=True, wrap=False)
+            meta.setStyleSheet(f"font-size: {theme.base_size() - 1}px;")
+            col.addWidget(meta)
             row.addLayout(col, 1)
             self.feed.addLayout(row)

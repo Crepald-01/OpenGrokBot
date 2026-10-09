@@ -382,6 +382,17 @@ check(users == ["What is on my calendar?", "Move the first one to 5pm instead"],
 check(any("Move the first one to 4pm" in i.get("text", "") for i in eng.threads.display(th["id"])), "the original conversation is unchanged")
 shot(win, "f20-branch")
 
+# ---- 8. Screenshots of Home, Usage and Inbox (added for the UI polish pass; no checks here) ------------------------------------------
+win.select("page:home")
+pump(2.0)
+shot(win, "f20-home")
+win.select("page:usage")
+pump(2.0)
+shot(win, "f20-usage")
+win.select("page:inbox")
+pump(1.5)
+shot(win, "f20-inbox")
+
 print("FAIL: " + "; ".join(fails) if fails else "ALL OK")
 sys.stdout.flush()
 ev.stop()

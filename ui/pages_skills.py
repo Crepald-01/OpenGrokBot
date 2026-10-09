@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
 
 from . import theme
 from .api import Api
+from .pages_files import set_row, styled_list
 from .pages_inbox import fmt_time
 from .store import Store
 from .widgets import button, chip, label, PageHeader, page_layout
@@ -70,7 +71,7 @@ class SkillsPage(QWidget):
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 8, 0)
-        self.list = QListWidget()
+        self.list = styled_list(QListWidget())
         self.list.currentRowChanged.connect(self._pick)
         lv.addWidget(self.list, 2)
         row = QHBoxLayout()
@@ -78,7 +79,7 @@ class SkillsPage(QWidget):
         row.addWidget(button("Delete", danger=True, on=self.delete))
         lv.addLayout(row)
         lv.addWidget(label("Learned by demonstration", h2=True))
-        self.rec_list = QListWidget()
+        self.rec_list = styled_list(QListWidget())
         self.rec_list.setMaximumHeight(160)
         lv.addWidget(self.rec_list, 1)
         r2 = QHBoxLayout()
@@ -110,7 +111,7 @@ class SkillsPage(QWidget):
         bar.addWidget(self.msg)
         rv.addLayout(bar)
         split.addWidget(right)
-        split.setSizes([320, 700])
+        split.setSizes([380, 640])
         store.event.connect(lambda ev: ev.get("type") == "recording" and self.isVisible() and self.load())
 
     def showEvent(self, e) -> None:
@@ -123,8 +124,13 @@ class SkillsPage(QWidget):
             self.list.blockSignals(True)
             self.list.clear()
             for s in rows:
-                it = QListWidgetItem(("● " if s["status"] == "active" else "○ ") + s["name"] + (f"   [{s['bot']}]" if s["bot"] else ""))
-                it.setToolTip(s["description"])
+                it = QListWidgetItem()
+                sub = s.get("description") or "No description yet."
+                if s.get("bot"):
+                    sub = f"For {s['bot']}  ·  {sub}"
+                set_row(it, s["name"], sub, "skills", "accent" if s["status"] == "active" else "muted",
+                        ("active", "ok") if s["status"] == "active" else ("draft", "warn"))
+                it.setToolTip(s.get("description") or "")
                 it.setData(Qt.ItemDataRole.UserRole, s["name"])
                 self.list.addItem(it)
             self.list.blockSignals(False)
@@ -142,9 +148,15 @@ class SkillsPage(QWidget):
             self.recs = rows
             self.rec_list.clear()
             for r in rows:
-                it = QListWidgetItem(f"{r['name']}  ·  {self.store.bot_name(r['bot_id'])}  ·  {len(r['steps'])} steps  ·  {r['status']}")
+                it = QListWidgetItem()
+                set_row(it, r["name"], f"{self.store.bot_name(r['bot_id'])}  ·  {len(r['steps'])} steps", "zap", "muted",
+                        (r["status"], {"recording": "warn", "drafted": "ok"}.get(r["status"], "muted")))
                 it.setData(Qt.ItemDataRole.UserRole, r["id"])
                 self.rec_list.addItem(it)
+            if not rows:
+                hint = QListWidgetItem("Nothing learned yet. Use Follow along… and show a Bot a job once.")
+                hint.setFlags(Qt.ItemFlag.NoItemFlags)
+                self.rec_list.addItem(hint)
         self.api.get("/api/recordings", recs)
 
     def _pick(self, row: int) -> None:
@@ -207,7 +219,7 @@ class SkillsPage(QWidget):
 
     def draft(self) -> None:
         it = self.rec_list.currentItem()
-        if not it:
+        if not it or not it.data(Qt.ItemDataRole.UserRole):
             QMessageBox.information(self, "Draft skill", "Pick a recording first.")
             return
         rid = it.data(Qt.ItemDataRole.UserRole)

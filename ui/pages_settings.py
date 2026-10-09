@@ -7,16 +7,16 @@ import time
 
 from PySide6.QtCore import QSize, Qt, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QTimeEdit, QHBoxLayout as _H, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressBar, QScrollArea, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QTimeEdit, QHBoxLayout as _H, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
 from core import paths
 from . import theme
 from .api import Api, Connection, load_ui_config, save_ui_config
 from .model_picker import ModelPicker
 from .store import Store
-from .settings_extra import ApiAccessPanel, BackupModelPanel, ChannelsPanel, DiagnosticsPanel
-from .widgets import PageHeader, SideTabs, button, card, chip, label, page_layout, repolish
+from .settings_extra import ApiAccessPanel, BackupModelPanel, ChannelsPanel, DiagnosticsPanel, StatusLine, form
+from .widgets import PageHeader, Section, SideTabs, button, card, chip, label, page_layout, repolish
 
 
 def lines(text: str) -> list[str]:
@@ -82,8 +82,8 @@ class AccentPicker(QWidget):
             repolish(d)
 
 
-def form_tab() -> tuple[QWidget, QVBoxLayout]:
-    """A scrolling settings page: one readable column (max 700px), left aligned, natural-width buttons."""
+def form_tab() -> tuple[QScrollArea, QVBoxLayout]:
+    """A scrolling settings page: one readable column (max 700px) of section cards, left aligned, natural-width buttons."""
     w = QWidget()
     outer = QHBoxLayout(w)
     outer.setContentsMargins(0, 0, 16, 16)
@@ -91,7 +91,7 @@ def form_tab() -> tuple[QWidget, QVBoxLayout]:
     col.setMaximumWidth(700)
     v = QVBoxLayout(col)
     v.setContentsMargins(0, 0, 0, 0)
-    v.setSpacing(14)
+    v.setSpacing(16)
     outer.addWidget(col, 1)
     outer.addStretch(0)
     sc = QScrollArea()
@@ -99,15 +99,6 @@ def form_tab() -> tuple[QWidget, QVBoxLayout]:
     sc.setWidget(w)
     sc.setFrameShape(QScrollArea.Shape.NoFrame)
     return sc, v
-
-
-def form() -> QFormLayout:
-    f = QFormLayout()
-    f.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-    f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-    f.setHorizontalSpacing(20)
-    f.setVerticalSpacing(12)
-    return f
 
 
 def with_hint(check, text: str) -> QWidget:
@@ -123,6 +114,18 @@ def with_hint(check, text: str) -> QWidget:
     return box
 
 
+def buttons(*items: QWidget, end: list[QWidget] | None = None) -> QHBoxLayout:
+    """A row of buttons from the left; `end` buttons sit at the right, away from the primary action (used for destructive ones)."""
+    row = QHBoxLayout()
+    row.setSpacing(8)
+    for w in items:
+        row.addWidget(w)
+    row.addStretch(1)
+    for w in end or []:
+        row.addWidget(w)
+    return row
+
+
 class SettingsPage(QWidget):
     themeChanged = Signal(str)
     appPrefsChanged = Signal()
@@ -131,6 +134,9 @@ class SettingsPage(QWidget):
     restartService = Signal()
     quitForUpdate = Signal()   # an update is installing: the main window quits so the installer can replace the app
 
+    # nav rows that open a new group of related pages (Approvals, Notifications, Computer, API access)
+    GROUP_STARTS = {1, 3, 4, 6}
+
     def __init__(self, api: Api, store: Store):
         super().__init__()
         self.api, self.store = api, store
@@ -138,7 +144,6 @@ class SettingsPage(QWidget):
         self.tabs = SideTabs(210)
         v.addWidget(self.tabs, 1)
         self.admin_banner = label("")
-        self.admin_banner.setStyleSheet(f"color: {theme.palette()['warn']};")
         self.admin_banner.hide()
         v.insertWidget(1, self.admin_banner)
         self._build_providers()
@@ -150,32 +155,49 @@ class SettingsPage(QWidget):
         self._build_api_access()
         self._build_diagnostics()
         self._build_app()
+        self._apply_local_styles()
         store.settingsChanged.connect(self.load)
 
     def showEvent(self, e) -> None:
         super().showEvent(e)
+        self._apply_local_styles()
         self.store.refresh_settings()
         self.store.refresh_profiles()
         self.load()
         self.load_mobile()
         self.refresh_update_card()
 
+    def _apply_local_styles(self) -> None:
+        """Colours and nav styling that depend on the theme. Re-applied on show and after a theme change."""
+        p = theme.palette()
+        self.admin_banner.setStyleSheet(f"color: {p['warn']};")
+        nav = self.tabs.nav
+        nav.setStyleSheet(
+            "QListWidget#sidetabs { background: transparent; border: none; outline: none; }"
+            f"QListWidget#sidetabs::item {{ padding: 8px 12px 8px 13px; margin: 1px 0; border-left: 3px solid transparent; border-radius: 6px; color: {p['muted']}; }}"
+            f"QListWidget#sidetabs::item:hover {{ color: {p['text']}; background: {p['hover']}; }}"
+            f"QListWidget#sidetabs::item:selected {{ color: {p['text']}; font-weight: 600; background: {p['select']}; border-left: 3px solid {p['accent']}; }}")
+        base, gap = theme.dp(38), theme.dp(14)
+        for i in range(nav.count()):
+            it = nav.item(i)
+            start = i in self.GROUP_STARTS
+            it.setSizeHint(QSize(nav.width(), base + (gap if start else 0)))
+            it.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        for t in (self.q_start, self.q_end, self.d_time):
+            t.setStyleSheet(f"QTimeEdit {{ background: {p['panel']}; border: 1px solid {p['line2']}; border-radius: 8px; padding: 6px 10px; }}")
+
     # =========================================================== providers
     def _build_providers(self) -> None:
-        w = QWidget()
-        h = QHBoxLayout(w)
-        left = QVBoxLayout()
+        sc, v = form_tab()
+        lst = Section("Providers", "Anthropic or any OpenAI-compatible endpoint. ● is ready, ○ still needs a key. New Bots use the default.")
         self.prov_list = QListWidget()
+        self.prov_list.setMaximumHeight(theme.dp(150))
         self.prov_list.currentRowChanged.connect(self._prov_pick)
-        left.addWidget(self.prov_list, 1)
-        left.addWidget(button("Add endpoint…", icon="plus", on=self.add_provider, tip="Add any OpenAI-compatible endpoint"))
-        lw = QWidget()
-        lw.setLayout(left)
-        lw.setFixedWidth(230)
-        h.addWidget(lw)
-        right = QVBoxLayout()
-        right.addWidget(label("Model provider", h2=True))
-        right.addWidget(label("Anthropic, or any OpenAI-compatible endpoint: OpenAI, OpenRouter, Groq, Ollama, LM Studio and more. Each Bot can use its own provider and model. API keys go to the Windows Credential Manager.", muted=True))
+        lst.add(self.prov_list)
+        lst.add(layout=buttons(button("Add endpoint…", icon="plus", on=self.add_provider, tip="Add any OpenAI-compatible endpoint")))
+        v.addWidget(lst)
+
+        sec = Section("Selected provider", "Each Bot can use its own provider and model. API keys go to the Windows Credential Manager.")
         f = form()
         self.p_label = QLineEdit()
         self.p_kind = QComboBox()
@@ -195,31 +217,20 @@ class SettingsPage(QWidget):
         f.addRow("", self.p_vision)
         f.addRow("", self.p_needs_key)
         f.addRow("API key", self.p_key)
-        right.addLayout(f)
-        self.p_status = label("", muted=True)
-        right.addWidget(self.p_status)
-        row = QHBoxLayout()
-        row.addWidget(button("Save", primary=True, on=self.p_save))
-        row.addWidget(button("Test", on=self.p_test, tip="Check the key and detect the available models"))
-        row.addWidget(button("Make default", on=lambda: self.p_save(make_default=True)))
-        row.addWidget(button("Remove key", on=self.p_remove_key))
-        self.p_delete = button("Delete", danger=True, on=self.p_del)
-        row.addWidget(self.p_delete)
-        row.addStretch(1)
-        right.addLayout(row)
+        sec.add(layout=f)
+        self.p_delete = button("Delete", danger=True, on=self.p_del, tip="Delete this endpoint and its saved key")
+        sec.add(layout=buttons(
+            button("Save", primary=True, on=self.p_save),
+            button("Test", on=self.p_test, tip="Check the key and detect the available models"),
+            button("Make default", on=lambda: self.p_save(make_default=True)),
+            end=[button("Remove key", danger=True, on=self.p_remove_key), self.p_delete]))
+        self.p_status = StatusLine()
+        sec.add(self.p_status)
+        v.addWidget(sec)
         self.backup_panel = BackupModelPanel(self.api, self.store)
-        right.addSpacing(10)
-        right.addWidget(self.backup_panel)
-        right.addStretch(1)
-        rw = QWidget()
-        rw.setLayout(right)
-        rsc = QScrollArea()
-        rsc.setWidgetResizable(True)
-        rsc.setFrameShape(QScrollArea.Shape.NoFrame)
-        rsc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        rsc.setWidget(rw)
-        h.addWidget(rsc, 1)
-        self.tabs.addTab(w, "Models", "sparkle")
+        v.addWidget(self.backup_panel)
+        v.addStretch(1)
+        self.tabs.addTab(sc, "Models", "sparkle")
         self.cur_prov = ""
 
     def _prov_refresh_list(self) -> None:
@@ -233,6 +244,8 @@ class SettingsPage(QWidget):
             it.setData(Qt.ItemDataRole.UserRole, p["id"])
             self.prov_list.addItem(it)
         self.prov_list.blockSignals(False)
+        # as tall as its rows (at most about five), not a big empty box
+        self.prov_list.setFixedHeight(max(theme.dp(64), min(theme.dp(190), theme.dp(16) + self.prov_list.count() * theme.dp(38))))
         for i in range(self.prov_list.count()):
             if self.prov_list.item(i).data(Qt.ItemDataRole.UserRole) == sel:
                 self.prov_list.setCurrentRow(i)
@@ -269,13 +282,13 @@ class SettingsPage(QWidget):
 
         def ok(_p: dict) -> None:
             self.p_key.clear()
-            self.p_status.setText("Saved." + (" Set as default." if make_default else ""))
+            self.p_status.ok("Saved." + (" Set as default." if make_default else ""))
             if changed_endpoint:
                 self.p_picker.invalidate()   # new key or URL: the model list may differ
             if then:
                 then()
             self.store.refresh_all()
-        self.api.put(f"/api/providers/{self.cur_prov}", body, ok, lambda e: self.p_status.setText("Error: " + e))
+        self.api.put(f"/api/providers/{self.cur_prov}", body, ok, lambda e: self.p_status.err("Error: " + e))
 
     def p_test(self) -> None:
         """Save any typed key first, then detect the models: success proves the key works."""
@@ -291,7 +304,8 @@ class SettingsPage(QWidget):
             run()
 
     def p_remove_key(self) -> None:
-        self.api.put(f"/api/secrets/provider:{self.cur_prov}", {"value": ""}, lambda _: (self.p_status.setText("Key removed."), self.store.refresh_all()))
+        self.api.put(f"/api/secrets/provider:{self.cur_prov}", {"value": ""}, lambda _: (self.p_status.ok("Key removed."), self.store.refresh_all()),
+                     lambda e: self.p_status.err(e))
 
     def p_del(self) -> None:
         if QMessageBox.question(self, "Delete", "Delete this provider and its saved key?") == QMessageBox.StandardButton.Yes:
@@ -309,37 +323,45 @@ class SettingsPage(QWidget):
     # ======================================================= safety / approvals
     def _build_safety(self) -> None:
         sc, v = form_tab()
+        a = Section("Approvals", "Who decides on consequential actions, and how Bots may run commands.")
         f = form()
         self.s_mode = QComboBox()
         self.s_mode.addItem("Ask me for consequential actions", "ask")
-        self.s_mode.addItem("Auto Review: a reviewer model approves low-risk ones, escalates the rest", "auto_review")
+        self.s_mode.addItem("Auto Review: a reviewer model decides", "auto_review")
         f.addRow("Default for new Bots", self.s_mode)
         self.s_rprov = QComboBox()
         self.s_rmodel = QLineEdit()
         self.s_rmodel.setPlaceholderText("Same as the Bot's model")
         f.addRow("Reviewer provider", self.s_rprov)
         f.addRow("Reviewer model", self.s_rmodel)
+        self.s_cmd = QComboBox()
+        self.s_cmd.addItem("Workspace commands run freely; others ask", "workspace")
+        self.s_cmd.addItem("Ask for every command", "ask_all")
+        f.addRow("Terminal", self.s_cmd)
+        a.add(layout=f)
+        a.add(label("Always requires approval, even in Auto Review: purchases, logging in to new services, granting access, and anything outside the workspace. "
+                    "Content from web pages, emails and files is treated as data, never as instructions; if it contains instruction-like text, automatic approvals are switched off for that task.", faint=True))
+        v.addWidget(a)
+
+        lim = Section("Timeouts and limits", "How long a Bot waits for you, and how much work it may do in one task.")
+        f2 = form()
         self.s_timeout = QSpinBox()
         self.s_timeout.setRange(1, 10080)
         self.s_timeout.setSuffix(" min")
         self.s_rtimeout = QSpinBox()
         self.s_rtimeout.setRange(1, 10080)
         self.s_rtimeout.setSuffix(" min")
-        f.addRow("Wait for an answer", self.s_timeout)
-        f.addRow("Wait during routines", self.s_rtimeout)
-        self.s_cmd = QComboBox()
-        self.s_cmd.addItem("Commands inside the workspace run freely; others ask", "workspace")
-        self.s_cmd.addItem("Ask for every command", "ask_all")
-        f.addRow("Terminal", self.s_cmd)
-        self.s_reflect = QCheckBox("Let Bots curate their own memory after a task")
-        f.addRow("", with_hint(self.s_reflect, "Preferences, voice and work summaries."))
         self.s_steps = QSpinBox()
         self.s_steps.setRange(1, 500)
-        f.addRow("Default step limit", self.s_steps)
-        v.addLayout(f)
-        v.addWidget(label("Always requires approval, even in Auto Review: purchases, logging in to new services, granting access, and anything outside the workspace. Content from web pages, emails and files is treated as data, never as instructions; if it contains instruction-like text, automatic approvals are switched off for that task.", muted=True))
+        f2.addRow("Wait for an answer", self.s_timeout)
+        f2.addRow("Wait during routines", self.s_rtimeout)
+        f2.addRow("Default step limit", self.s_steps)
+        self.s_reflect = QCheckBox("Let Bots curate their own memory after a task")
+        f2.addRow("", with_hint(self.s_reflect, "Preferences, voice and work summaries."))
+        lim.add(layout=f2)
+        v.addWidget(lim)
+        self.s_msg = StatusLine()
         v.addWidget(button("Save", primary=True, on=self.save_safety))
-        self.s_msg = label("", muted=True)
         v.addWidget(self.s_msg)
         v.addStretch(1)
         self.tabs.addTab(sc, "Approvals & safety", "shield")
@@ -348,89 +370,104 @@ class SettingsPage(QWidget):
         body = {"approval.default_mode": self.s_mode.currentData(), "reviewer.profile": self.s_rprov.currentData() or "", "reviewer.model": self.s_rmodel.text().strip(),
                 "approval.timeout_min": self.s_timeout.value(), "approval.routine_timeout_min": self.s_rtimeout.value(), "computer.command_policy": self.s_cmd.currentData(),
                 "memory.auto_reflect": self.s_reflect.isChecked(), "defaults.step_limit": self.s_steps.value()}
-        self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.s_msg.setText("Saved.")), lambda e: self.s_msg.setText(e))
+        self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.s_msg.ok("Saved.")), lambda e: self.s_msg.err(e))
 
     # ========================================================= network policy
     def _build_network(self) -> None:
         sc, v = form_tab()
-        v.addWidget(label("Network policy", h2=True))
-        v.addWidget(label("Applies to every Bot's browser and web requests. Each Bot can add its own lists in its settings. Deny always wins.", muted=True))
+        sec = Section("Network policy", "Applies to every Bot's browser and web requests. Each Bot can add its own lists. Deny always wins.")
         self.n_mode = QComboBox()
         self.n_mode.addItem("Open: block only the deny list", "open")
         self.n_mode.addItem("Allow list only: block everything else", "allowlist")
-        v.addWidget(self.n_mode)
+        sec.add(self.n_mode)
         row = QHBoxLayout()
+        row.setSpacing(16)
         col1, col2 = QVBoxLayout(), QVBoxLayout()
-        col1.addWidget(label("Allowed domains (one per line, *.example.com works)"))
+        col1.addWidget(label("Allowed domains (one per line, *.example.com works)", faint=True))
         self.n_allow = QPlainTextEdit()
         col1.addWidget(self.n_allow)
-        col2.addWidget(label("Blocked domains"))
+        col2.addWidget(label("Blocked domains (one per line)", faint=True))
         self.n_deny = QPlainTextEdit()
         col2.addWidget(self.n_deny)
-        row.addLayout(col1)
-        row.addLayout(col2)
-        v.addLayout(row, 1)
+        row.addLayout(col1, 1)
+        row.addLayout(col2, 1)
+        sec.add(layout=row)
         self.n_private = QCheckBox("Block local and private network addresses")
-        v.addWidget(with_hint(self.n_private, "Such as localhost and 192.168.x.x."))
+        sec.add(with_hint(self.n_private, "Such as localhost and 192.168.x.x."))
+        v.addWidget(sec)
+        self.n_msg = StatusLine()
         v.addWidget(button("Save", primary=True, on=self.save_network))
-        self.n_msg = label("", muted=True)
         v.addWidget(self.n_msg)
+        v.addStretch(1)
         self.tabs.addTab(sc, "Network", "globe")
 
     def save_network(self) -> None:
         body = {"network.mode": self.n_mode.currentData(), "network.allow": lines(self.n_allow.toPlainText()), "network.deny": lines(self.n_deny.toPlainText()),
                 "network.block_private": self.n_private.isChecked()}
-        self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.n_msg.setText("Saved.")), lambda e: self.n_msg.setText(e))
+        self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.n_msg.ok("Saved.")), lambda e: self.n_msg.err(e))
 
     # ========================================================== notifications
     def _build_notifications(self) -> None:
         sc, v = form_tab()
+        alerts = Section("Alerts on this PC", "Pop-ups, sounds and tray alerts when a Bot needs you or finishes.")
         self.no_toast = QCheckBox("Windows toast notifications and tray alerts")
         self.no_sound = QCheckBox("Play a sound when a Bot needs you")
         self.no_finish = QCheckBox("Notify when a Bot finishes a task")
         self.no_appr = QCheckBox("Notify when a Bot needs you (approval, question or browser)")
         for c in (self.no_toast, self.no_sound, self.no_finish, self.no_appr):
-            v.addWidget(c)
+            alerts.add(c)
         f = form()
         self.no_min = QSpinBox()
         self.no_min.setRange(0, 3600)
         self.no_min.setSuffix(" s")
         f.addRow("Only for tasks longer than", self.no_min)
+        alerts.add(layout=f)
+        v.addWidget(alerts)
+
+        quiet = Section("Quiet hours and digest", "Stay silent on a schedule, and get one summary a day.")
         self.q_on = QCheckBox("Quiet hours")
-        v.addWidget(with_hint(self.q_on, "No pop-ups, sounds or phone pushes on a schedule. The Inbox still collects everything."))
+        quiet.add(with_hint(self.q_on, "No pop-ups, sounds or phone pushes on a schedule. The Inbox still collects everything."))
         self.q_start, self.q_end = QTimeEdit(), QTimeEdit()
         for t in (self.q_start, self.q_end):
             t.setDisplayFormat("HH:mm")
-        f.addRow("Quiet from", self.q_start)
-        f.addRow("Quiet until", self.q_end)
+        fq = form()
+        fq.addRow("Quiet from", self.q_start)
+        fq.addRow("Quiet until", self.q_end)
+        quiet.add(layout=fq)
         self.d_on = QCheckBox("Daily digest")
-        v.addWidget(with_hint(self.d_on, "One notification a day with what your Bots did."))
+        quiet.add(with_hint(self.d_on, "One notification a day with what your Bots did."))
         self.d_time = QTimeEdit()
         self.d_time.setDisplayFormat("HH:mm")
-        f.addRow("Digest at", self.d_time)
+        fd = form()
+        fd.addRow("Digest at", self.d_time)
+        quiet.add(layout=fd)
+        v.addWidget(quiet)
+
+        push = Section("Phone push", "For alerts while your phone is locked. Use the free ntfy app and your own server for privacy.")
         self.no_url = QLineEdit()
         self.no_url.setPlaceholderText("https://ntfy.sh")
         self.no_topic = QLineEdit()
         self.no_topic.setPlaceholderText("a-long-random-topic-name")
-        f.addRow("Phone push: ntfy server", self.no_url)
-        f.addRow("Phone push: topic", self.no_topic)
-        v.addLayout(f)
+        fp = form()
+        fp.addRow("ntfy server", self.no_url)
+        fp.addRow("Topic", self.no_topic)
+        push.add(layout=fp)
+        push.add(label("Subscribe to the same topic in the ntfy app. The mobile web app also shows alerts while it is open.", faint=True))
+        v.addWidget(push)
+
         self.channels_panel = ChannelsPanel(self.api, self.store)
         v.addWidget(self.channels_panel)
-        v.addWidget(label("For push notifications while your phone is locked, install the free ntfy app, subscribe to the same topic, and fill in the two fields above (use your own server for privacy). The mobile web app also shows alerts while it is open.", muted=True))
-        dnd = QHBoxLayout()
-        dnd.addWidget(label("Do Not Disturb:", muted=True, wrap=False))
-        for text, secs in (("1 hour", 3600), ("4 hours", 4 * 3600), ("Until tomorrow", 0)):
-            dnd.addWidget(button(text, on=lambda s=secs: self.set_dnd(s)))
-        dnd.addWidget(button("End it", flat=True, on=lambda: self.set_dnd(-1)))
-        dnd.addStretch(1)
-        v.addLayout(dnd)
-        row = QHBoxLayout()
-        row.addWidget(button("Save", primary=True, on=self.save_notifications))
-        row.addWidget(button("Send test", on=lambda: self.api.post("/api/notifications/test", {})))
-        row.addStretch(1)
-        v.addLayout(row)
-        self.no_msg = label("", muted=True)
+
+        dnd = Section("Do not disturb", "Silence all alerts for a while. The Inbox still collects everything.")
+        dnd.add(layout=buttons(
+            button("1 hour", on=lambda: self.set_dnd(3600)),
+            button("4 hours", on=lambda: self.set_dnd(4 * 3600)),
+            button("Until tomorrow", on=lambda: self.set_dnd(0)),
+            end=[button("End it", flat=True, on=lambda: self.set_dnd(-1))]))
+        v.addWidget(dnd)
+
+        self.no_msg = StatusLine()
+        v.addLayout(buttons(button("Save", primary=True, on=self.save_notifications), button("Send test", on=lambda: self.api.post("/api/notifications/test", {}))))
         v.addWidget(self.no_msg)
         v.addStretch(1)
         self.tabs.addTab(sc, "Notifications", "alert")
@@ -441,7 +478,7 @@ class SettingsPage(QWidget):
                 "notifications.ntfy_topic": self.no_topic.text().strip(), "notifications.quiet_enabled": self.q_on.isChecked(),
                 "notifications.quiet_start": self.q_start.time().toString("HH:mm"), "notifications.quiet_end": self.q_end.time().toString("HH:mm"),
                 "digest.enabled": self.d_on.isChecked(), "digest.time": self.d_time.time().toString("HH:mm")}
-        self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.no_msg.setText("Saved.")), lambda e: self.no_msg.setText(e))
+        self.api.put("/api/settings", body, lambda s: (setattr(self.store, "settings", s), self.no_msg.ok("Saved.")), lambda e: self.no_msg.err(e))
 
     def set_dnd(self, secs: int) -> None:
         """secs > 0: that long from now; 0: until 07:00 tomorrow-ish (next local midnight + 7h); -1: end Do Not Disturb."""
@@ -452,42 +489,42 @@ class SettingsPage(QWidget):
         else:
             until = 0 if secs < 0 else time.time() + secs
         self.api.put("/api/settings", {"notifications.dnd_until": until},
-                     lambda s: (setattr(self.store, "settings", s), self.store.settingsChanged.emit(), self.no_msg.setText("Do Not Disturb is off." if not until else "Do Not Disturb is on.")))
+                     lambda s: (setattr(self.store, "settings", s), self.store.settingsChanged.emit(),
+                                self.no_msg.ok("Do Not Disturb is off." if not until else "Do Not Disturb is on.")),
+                     lambda e: self.no_msg.err(e))
 
     # ============================================================== computer
     def _build_computer(self) -> None:
         sc, v = form_tab()
-        v.addWidget(label("The computer", h2=True))
-        v.addWidget(label("All your Bots share one persistent computer: a browser with a persistent profile, a filesystem workspace and a terminal. By default it runs on this PC in a sandboxed workspace folder.", muted=True))
+        top = Section("The computer", "All your Bots share one persistent computer: a browser, a workspace folder and a terminal. By default it runs on this PC.")
         self.c_headless = QCheckBox("Run the browser without a visible window")
-        v.addWidget(with_hint(self.c_headless, "Use Take over to watch or help."))
-        v.addWidget(button("Save", primary=True, on=self.save_computer))
-        self.c_msg = label("", muted=True)
-        v.addWidget(self.c_msg)
-        grp = QGroupBox("Where the computer runs")
-        g = QVBoxLayout(grp)
+        top.add(with_hint(self.c_headless, "Use Take over to watch or help."))
+        self.c_msg = StatusLine()
+        top.add(layout=buttons(button("Save", primary=True, on=self.save_computer)))
+        top.add(self.c_msg)
+        v.addWidget(top)
+
+        sec = Section("Where the computer runs", "Remote mode runs the same computer, Bots, routines and background turns on another machine, so work continues while this laptop is closed.")
         self.c_mode_local = QComboBox()
         self.c_mode_local.addItem("This PC (local service, starts automatically)", "local")
         self.c_mode_local.addItem("Remote: a Windows VM or Docker host I run", "remote")
-        g.addWidget(self.c_mode_local)
-        f = form()
         self.c_url = QLineEdit()
         self.c_url.setPlaceholderText("http://my-vm:8765  (use https or a VPN/SSH tunnel across the internet)")
         self.c_token = QLineEdit()
         self.c_token.setEchoMode(QLineEdit.EchoMode.Password)
         self.c_token.setPlaceholderText("Access token printed by the remote service")
+        f = form()
+        f.addRow("Runs on", self.c_mode_local)
         f.addRow("Remote URL", self.c_url)
         f.addRow("Access token", self.c_token)
-        g.addLayout(f)
-        g.addWidget(label("Remote mode runs the same computer, Bots, routines and background turns on the other machine, so work continues while this laptop is closed. See deploy/ and the README for a one-command setup.", muted=True))
-        row = QHBoxLayout()
-        row.addWidget(button("Test and switch", primary=True, on=self.switch_computer))
-        row.addWidget(button("Restart local service", on=self.restartService.emit))
-        row.addStretch(1)
-        g.addLayout(row)
-        self.c_status = label("", muted=True)
-        g.addWidget(self.c_status)
-        v.addWidget(grp)
+        sec.add(layout=f)
+        sec.add(label("See deploy/ and the README for a one-command remote setup.", faint=True))
+        sec.add(layout=buttons(
+            button("Test and switch", primary=True, on=self.switch_computer),
+            end=[button("Restart local service", on=self.restartService.emit)]))
+        self.c_status = StatusLine()
+        sec.add(self.c_status)
+        v.addWidget(sec)
         v.addStretch(1)
         cfg = load_ui_config()
         self.c_mode_local.setCurrentIndex(1 if cfg.get("mode") == "remote" else 0)
@@ -495,21 +532,22 @@ class SettingsPage(QWidget):
         self.tabs.addTab(sc, "Computer", "computer")
 
     def save_computer(self) -> None:
-        self.api.put("/api/settings", {"computer.headless": self.c_headless.isChecked()}, lambda s: (setattr(self.store, "settings", s), self.c_msg.setText("Saved. The browser restarts on next use.")),
-                     lambda e: self.c_msg.setText(e))
+        self.api.put("/api/settings", {"computer.headless": self.c_headless.isChecked()},
+                     lambda s: (setattr(self.store, "settings", s), self.c_msg.ok("Saved. The browser restarts on next use.")),
+                     lambda e: self.c_msg.err(e))
 
     def switch_computer(self) -> None:
         from core import secrets as sec
         mode = self.c_mode_local.currentData()
         adm = (self.store.status.get("admin") or {}).get("policy", {})
         if mode == "remote" and adm.get("allow_remote_mode") is False:
-            self.c_status.setText("Remote mode is disabled by your administrator.")
+            self.c_status.err("Remote mode is disabled by your administrator.")
             return
         cfg = {"mode": mode, "url": self.c_url.text().strip()}
         if mode == "remote":
             tok = self.c_token.text().strip() or sec.get_secret("ui:remote_token") or ""
             if not cfg["url"] or not tok:
-                self.c_status.setText("Enter the remote URL and access token.")
+                self.c_status.err("Enter the remote URL and access token.")
                 return
             try:
                 import httpx
@@ -518,19 +556,19 @@ class SettingsPage(QWidget):
                     raise RuntimeError("The token was rejected.")
                 r.raise_for_status()
             except Exception as e:  # noqa: BLE001
-                self.c_status.setText(f"Could not connect: {e}")
+                self.c_status.err(f"Could not connect: {e}")
                 return
             try:
                 sec.set_secret("ui:remote_token", tok)
             except Exception as e:  # noqa: BLE001
-                self.c_status.setText(str(e))
+                self.c_status.err(str(e))
                 return
             self.c_token.clear()
             self.switchConnection.emit(Connection("remote", cfg["url"], tok))
         else:
             self.switchConnection.emit(Connection("local"))
         save_ui_config({**load_ui_config(), **cfg})
-        self.c_status.setText("Switched. Reconnecting…")
+        self.c_status.ok("Switched. Reconnecting…")
 
     # ============================================================ api access
     def _build_api_access(self) -> None:
@@ -549,33 +587,28 @@ class SettingsPage(QWidget):
     # ================================================================ mobile
     def _build_mobile(self) -> None:
         sc, v = form_tab()
-        v.addWidget(label("Mobile web app", h2=True))
-        v.addWidget(label("Message your Bots from your phone: the same threads, approvals and a take-over view. Open the link below on your phone (same Wi-Fi), then “Add to Home screen”.", muted=True))
+        sec = Section("Mobile web app", "Message your Bots from your phone: the same threads, approvals and a take-over view.")
         self.m_lan = QCheckBox("Allow phones on my network (listen on all addresses)")
-        v.addWidget(self.m_lan)
-        row = QHBoxLayout()
+        sec.add(self.m_lan)
         self.m_port = QSpinBox()
         self.m_port.setRange(1024, 65535)
-        row.addWidget(label("Port"))
-        row.addWidget(self.m_port)
-        row.addWidget(button("Apply (restarts the service)", primary=True, on=self.apply_mobile))
-        row.addStretch(1)
-        v.addLayout(row)
+        f = form()
+        f.addRow("Port", self.m_port)
+        sec.add(layout=f)
+        sec.add(layout=buttons(button("Apply (restarts the service)", primary=True, on=self.apply_mobile)))
         self.m_qr = QLabel()
         self.m_qr.setFixedSize(220, 220)
-        v.addWidget(self.m_qr)
+        sec.add(self.m_qr)
         self.m_urls = QPlainTextEdit()
         self.m_urls.setReadOnly(True)
-        self.m_urls.setMaximumHeight(110)
-        v.addWidget(self.m_urls)
-        row2 = QHBoxLayout()
-        row2.addWidget(button("Copy link", on=self.copy_link))
-        row2.addWidget(button("Show access token", on=self.show_token))
-        row2.addStretch(1)
-        v.addLayout(row2)
-        v.addWidget(label("The link contains your access token: treat it like a password. The connection is plain HTTP on your LAN; across the internet use a VPN such as Tailscale, an SSH tunnel, or HTTPS (service flags --ssl-certfile/--ssl-keyfile). Reset the token with:  python main.py --reset-token", muted=True))
-        self.m_msg = label("", muted=True)
-        v.addWidget(self.m_msg)
+        self.m_urls.setMaximumHeight(theme.dp(110))
+        sec.add(self.m_urls)
+        sec.add(layout=buttons(button("Copy link", on=self.copy_link), button("Show access token", on=self.show_token)))
+        sec.add(label("Open the link on your phone (same Wi-Fi), then “Add to Home screen”. The link contains your access token: treat it like a password. "
+                      "Across the internet use a VPN such as Tailscale, an SSH tunnel, or HTTPS. Reset the token with:  python main.py --reset-token", faint=True))
+        self.m_msg = StatusLine()
+        sec.add(self.m_msg)
+        v.addWidget(sec)
         v.addStretch(1)
         self.mobile_info: dict = {}
         self.tabs.addTab(sc, "Mobile", "users")
@@ -598,7 +631,7 @@ class SettingsPage(QWidget):
         t = self.m_urls.toPlainText().splitlines()
         if t:
             QGuiApplication.clipboard().setText(t[0])
-            self.m_msg.setText("Link copied.")
+            self.m_msg.ok("Link copied.")
 
     def show_token(self) -> None:
         tok = self.mobile_info.get("token", "")
@@ -612,7 +645,7 @@ class SettingsPage(QWidget):
             self.m_msg.setText("Restarting the service…")
             self.restartService.emit()
             QTimer.singleShot(1500, lambda: self._mobile_wait(want_lan, 0))
-        self.api.put("/api/settings", body, saved)
+        self.api.put("/api/settings", body, saved, lambda e: self.m_msg.err(e))
 
     def _mobile_wait(self, want_lan: bool, tries: int) -> None:
         """Poll until the restarted service answers with the new settings, then refresh the link and QR code."""
@@ -622,20 +655,21 @@ class SettingsPage(QWidget):
                 return
             self.load_mobile()
             if want_lan:
-                self.m_msg.setText("Ready. On your phone (same Wi-Fi) open the link above. If it does not load: check the phone is not on mobile data or a guest network, and allow OpenGrokBot through Windows Firewall for Private and Public networks.")
+                self.m_msg.ok("Ready. On your phone (same Wi-Fi) open the link above. If it does not load: check the phone is not on mobile data or a guest network, and allow OpenGrokBot through Windows Firewall for Private and Public networks.")
             else:
-                self.m_msg.setText("Phone access is off. The service now listens on this PC only.")
+                self.m_msg.ok("Phone access is off. The service now listens on this PC only.")
 
         def retry(_e: str = "") -> None:
             if tries < 25:
                 QTimer.singleShot(1500, lambda: self._mobile_wait(want_lan, tries + 1))
             else:
-                self.m_msg.setText("The service did not come back. Use Settings > Computer > Restart local service.")
+                self.m_msg.err("The service did not come back. Use Settings > Computer > Restart local service.")
         self.api.get("/api/mobile", ok, retry)
 
     # ================================================================== app
     def _build_app(self) -> None:
         sc, v = form_tab()
+        look = Section("Appearance", "How OpenGrokBot looks on this PC.")
         f = form()
         self.a_theme = QComboBox()
         self.a_theme.addItem("Dark (calm, default)", "dark")
@@ -655,39 +689,41 @@ class SettingsPage(QWidget):
             self.a_text.addItem(f"{name} ({px}px)", k)
         self.a_text.setCurrentIndex(max(0, self.a_text.findData(cfg0.get("text", "default"))))
         f.addRow("Text size", self.a_text)
-        v.addLayout(f)
+        look.add(layout=f)
+        v.addWidget(look)
+
+        startup = Section("Startup and tray", "What happens when you close the window, and when you sign in to Windows.")
         self.a_tray = QCheckBox("Closing the window keeps the app in the system tray")
-        v.addWidget(with_hint(self.a_tray, "Bots always keep running in the background service."))
+        startup.add(with_hint(self.a_tray, "Bots always keep running in the background service."))
         self.a_start = QCheckBox("Start with Windows (minimised to the tray)")
-        v.addWidget(self.a_start)
+        startup.add(self.a_start)
         self.a_hotkey = QCheckBox("Global shortcut: Ctrl+Alt+Space opens Quick Ask from anywhere")
         self.a_hotkey.setChecked(bool(cfg0.get("quick_hotkey", True)))
-        v.addWidget(with_hint(self.a_hotkey, "Ctrl+J inside the app always works."))
+        startup.add(with_hint(self.a_hotkey, "Ctrl+J inside the app always works."))
         self.a_updates = QCheckBox("Tell me when a new version is out")
-        v.addWidget(with_hint(self.a_updates, "One request to GitHub a day. Nothing about you is sent."))
-        v.addWidget(button("Save", primary=True, on=self.save_app))
-        self.a_info = label("", muted=True)
+        startup.add(with_hint(self.a_updates, "One request to GitHub a day. Nothing about you is sent."))
+        v.addWidget(startup)
+
+        self.a_info = StatusLine()
+        v.addLayout(buttons(button("Save", primary=True, on=self.save_app)))
         v.addWidget(self.a_info)
-        row = QHBoxLayout()
-        row.addWidget(button("Open data folder", on=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.data_dir())))))
-        row.addWidget(button("Open logs", on=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.logs_dir())))))
-        row.addStretch(1)
-        v.addLayout(row)
-        v.addSpacing(6)
+
         self._build_update_card(v)
-        v.addSpacing(6)
-        v.addWidget(label("Backup and restore", h2=True))
-        v.addWidget(label("A backup holds your Bots, chats, memory, routines, settings and skills in one zip. API keys and tokens stay in the Windows Credential Manager and are not included.", muted=True))
+
+        data = Section("Data and logs", "Your Bots, chats and settings live in the data folder.")
+        data.add(layout=buttons(
+            button("Open data folder", on=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.data_dir())))),
+            button("Open logs", on=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.logs_dir()))))))
+        v.addWidget(data)
+
+        backup = Section("Backup and restore", "A backup holds your Bots, chats, memory, routines, settings and skills in one zip. API keys and tokens stay in the Windows Credential Manager and are not included.")
         self.a_ws = QCheckBox("Also include the shared workspace files")
-        v.addWidget(self.a_ws)
-        brow = QHBoxLayout()
-        brow.addWidget(button("Back up…", icon="download", on=self.backup_now))
-        brow.addWidget(button("Restore…", icon="upload", on=self.restore_backup))
-        brow.addStretch(1)
-        v.addLayout(brow)
-        self.a_backup_msg = label("", muted=True)
-        v.addWidget(self.a_backup_msg)
-        self.a_admin = label("", muted=True)
+        backup.add(self.a_ws)
+        backup.add(layout=buttons(button("Back up…", icon="download", on=self.backup_now), button("Restore…", icon="upload", on=self.restore_backup)))
+        self.a_backup_msg = StatusLine()
+        backup.add(self.a_backup_msg)
+        v.addWidget(backup)
+        self.a_admin = label("", faint=True)
         v.addWidget(self.a_admin)
         v.addStretch(1)
         cfg = load_ui_config()
@@ -734,13 +770,19 @@ class SettingsPage(QWidget):
         try:
             self._set_autostart(self.a_start.isChecked())
         except OSError as e:
-            self.a_info.setText(f"Could not change autostart: {e}")
+            self.a_info.err(f"Could not change autostart: {e}")
         cfg = load_ui_config()
         cfg["quick_hotkey"] = self.a_hotkey.isChecked()
         save_ui_config(cfg)
         t = self.a_theme.currentData()
-        self.api.put("/api/settings", {"theme": t, "updates.check": self.a_updates.isChecked()},
-                     lambda s: (setattr(self.store, "settings", s), self.appPrefsChanged.emit(), self.themeChanged.emit(t), self.a_info.setText("Saved.")))
+
+        def saved(s: dict) -> None:
+            setattr(self.store, "settings", s)
+            self.appPrefsChanged.emit()
+            self.themeChanged.emit(t)
+            self._apply_local_styles()
+            self.a_info.ok("Saved.")
+        self.api.put("/api/settings", {"theme": t, "updates.check": self.a_updates.isChecked()}, saved, lambda e: self.a_info.err(e))
 
     def backup_now(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Back up OpenGrokBot", "opengrokbot-backup-" + time.strftime("%Y%m%d-%H%M") + ".zip", "Backup (*.zip)")
@@ -751,8 +793,8 @@ class SettingsPage(QWidget):
         def ok(data: bytes) -> None:
             with open(path, "wb") as f:
                 f.write(data)
-            self.a_backup_msg.setText(f"Saved {path} ({len(data) / 1024 / 1024:.1f} MB).")
-        self.api.request("GET", "/api/backup", ok, lambda e: self.a_backup_msg.setText(e), params={"workspace": str(self.a_ws.isChecked()).lower()}, raw=True)
+            self.a_backup_msg.ok(f"Saved {path} ({len(data) / 1024 / 1024:.1f} MB).")
+        self.api.request("GET", "/api/backup", ok, lambda e: self.a_backup_msg.err(e), params={"workspace": str(self.a_ws.isChecked()).lower()}, raw=True)
 
     def restore_backup(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Restore from a backup", "", "Backup (*.zip)")
@@ -764,21 +806,17 @@ class SettingsPage(QWidget):
             data = f.read()
 
         def ok(r: dict) -> None:
-            self.a_backup_msg.setText(f"Backup accepted: {r['bots']} Bots, {r['threads']} chats. Restarting the service to apply it…")
+            self.a_backup_msg.ok(f"Backup accepted: {r['bots']} Bots, {r['threads']} chats. Restarting the service to apply it…")
             QTimer.singleShot(800, self.restartService.emit)
-        self.api.request("POST", "/api/backup/restore", ok, lambda e: self.a_backup_msg.setText(e), content=data, timeout=300.0)
+        self.api.request("POST", "/api/backup/restore", ok, lambda e: self.a_backup_msg.err(e), content=data, timeout=300.0)
 
     # ============================================================ updates card
     def _build_update_card(self, v: QVBoxLayout) -> None:
-        v.addWidget(label("Updates", h2=True))
-        box = self.u_card = card("true")
-        g = QVBoxLayout(box)
-        g.setContentsMargins(theme.dp(18), theme.dp(16), theme.dp(18), theme.dp(16))
-        g.setSpacing(theme.dp(10))
+        box = self.u_card = Section("Updates", "The installed version, and the newest release on GitHub.")
         self.u_title = label("", muted=True)
         self.u_status = label("Press Check for updates to look for a new version.")
-        g.addWidget(self.u_title)
-        g.addWidget(self.u_status)
+        box.add(self.u_title)
+        box.add(self.u_status)
         self.u_bar = QProgressBar()
         self.u_bar.setTextVisible(False)
         self.u_bar.setRange(0, 1)
@@ -786,16 +824,12 @@ class SettingsPage(QWidget):
         self.u_error = label("")
         self.u_error.setStyleSheet(f"color: {theme.palette()['bad']};")
         for w in (self.u_bar, self.u_prog, self.u_error):
-            g.addWidget(w)
+            box.add(w)
             w.hide()
-        row = QHBoxLayout()
         self.u_check = button("Check for updates", on=self.check_updates)
         self.u_update = button("Update now", primary=True, on=self.start_update, tip="Download the new version and install it. OpenGrokBot restarts itself.")
         self.u_release = button("Open release page", on=self.open_release)
-        for b in (self.u_check, self.u_update, self.u_release):
-            row.addWidget(b)
-        row.addStretch(1)
-        g.addLayout(row)
+        box.add(layout=buttons(self.u_check, self.u_update, self.u_release))
         v.addWidget(box)
         self.u_update.hide()
         self.u_release.hide()

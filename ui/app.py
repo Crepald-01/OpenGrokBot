@@ -8,7 +8,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from core import secrets
-from . import theme
+from . import theme, motion
 from .api import Api, Connection, EventThread, load_ui_config, save_ui_config, remote_token
 from .main_window import MainWindow
 from .quick_ask import GlobalHotkey
@@ -201,6 +201,7 @@ def run_ui(start_hidden: bool = False) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("OpenGrokBot")
     app.setQuitOnLastWindowClosed(False)
+    motion.install(app)
     app.setWindowIcon(theme.app_icon())
     cfg = load_ui_config()
     theme.configure(cfg.get("accent"), cfg.get("density"), cfg.get("text"))

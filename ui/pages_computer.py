@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QGridLayout, QHBo
 from . import theme
 from .api import Api
 from .store import Store
-from .widgets import button, card, chip, clear_layout, label, PageHeader, page_layout
+from .pages_files import set_row, styled_list
+from .widgets import button, card, chip, clear_layout, icon_button, label, PageHeader, page_layout
 
 
 class ScreenCard(QFrame):
@@ -29,7 +30,7 @@ class ScreenCard(QFrame):
         self.chip = chip("no screen yet")
         head.addWidget(self.chip)
         v.addLayout(head)
-        self.thumb = QLabel("No browser tab open yet")
+        self.thumb = QLabel("No browser tab open yet\nTake over or follow along to open one.")
         self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumb.setMinimumHeight(170)
         self.thumb.setStyleSheet(f"background: {theme.palette()['code']}; border-radius: 8px; color: {theme.palette()['muted']};")
@@ -73,23 +74,36 @@ class FilesTab(QWidget):
         h = QHBoxLayout(self)
         left = QVBoxLayout()
         bar = QHBoxLayout()
-        bar.addWidget(button("↑", on=self.up))
+        bar.setSpacing(8)
+        bar.addWidget(icon_button("arrow-left", "Up one folder", self.up))
         self.path_label = label(".", muted=True, wrap=False)
         bar.addWidget(self.path_label, 1)
-        bar.addWidget(button("⟳", on=self.reload))
+        bar.addWidget(icon_button("refresh", "Refresh", self.reload))
         left.addLayout(bar)
-        self.list = QListWidget()
+        self.list = styled_list(QListWidget())
         self.list.itemDoubleClicked.connect(self.open_item)
+        self.hint = label("This folder is empty. Create a file, or upload one from your computer.", muted=True)
+        left.addWidget(self.hint)
         left.addWidget(self.list, 1)
+        tools = QFrame()
+        tools.setObjectName("toolgroup")
+        tl = QVBoxLayout(tools)
+        tl.setContentsMargins(8, 8, 8, 8)
+        tl.setSpacing(6)
         row = QHBoxLayout()
+        row.setSpacing(6)
         row.addWidget(button("New file", on=self.new_file))
         row.addWidget(button("New folder", on=self.new_folder))
         row.addWidget(button("Upload", on=self.upload))
-        left.addLayout(row)
+        row.addStretch(1)
+        tl.addLayout(row)
         row2 = QHBoxLayout()
+        row2.setSpacing(6)
         row2.addWidget(button("Download", on=self.download))
         row2.addWidget(button("Delete", danger=True, on=self.delete))
-        left.addLayout(row2)
+        row2.addStretch(1)
+        tl.addLayout(row2)
+        left.addWidget(tools)
         lw = QWidget()
         lw.setLayout(left)
         lw.setMaximumWidth(380)
@@ -109,9 +123,11 @@ class FilesTab(QWidget):
             self.path_label.setText("workspace/" + ("" if self.path == "." else self.path))
             self.list.clear()
             for it in d["items"]:
-                li = QListWidgetItem(("📁  " if it["dir"] else "📄  ") + it["name"] + ("" if it["dir"] else f"   ({it['size']:,} B)"))
+                li = QListWidgetItem()
+                set_row(li, it["name"], "Folder" if it["dir"] else f"{it['size']:,} B", "folder" if it["dir"] else "file", "accent" if it["dir"] else "muted")
                 li.setData(Qt.ItemDataRole.UserRole, it)
                 self.list.addItem(li)
+            self.hint.setVisible(not d["items"])
         self.api.get("/api/computer/files", ok, params={"path": self.path})
 
     def _join(self, name: str) -> str:

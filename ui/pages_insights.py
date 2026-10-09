@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QListWidget, QListWidgetItem, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
 from . import theme
@@ -40,14 +40,20 @@ class StackedDays(QWidget):
         return self.width() / n, self.height() - 26
 
     def paintEvent(self, _e) -> None:
-        if not self.data:
-            return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         pal = theme.palette()
+        if not self.data:
+            p.setPen(QColor(pal["muted"]))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No tasks in this period yet.")
+            return
         w, h = self._geom()
         mx = max([d["tasks"] for d in self.data] + [1])
-        step = max(1, len(self.data) // 7)
+        # labels are spaced so neighbours never touch: about 62 px per label
+        step = max(1, -(-62 // max(1, int(w))))
+        small = QFont(self.font())
+        small.setPixelSize(theme.base_size() - 1)
+        p.setFont(small)
         for i, d in enumerate(self.data):
             x = i * w + w * 0.18
             bw = w * 0.64
@@ -58,11 +64,12 @@ class StackedDays(QWidget):
                 p.setBrush(QColor(pal["line2"]))
                 p.drawRoundedRect(QRectF(x, h - 2, bw, 2), 1, 1)
             else:
+                # rounded tops: the finished part is a full rounded bar; problems sit on top of it, also rounded
                 p.setBrush(QColor(pal["accent"]))
-                p.drawRoundedRect(QRectF(x, h - ok_h, bw, max(ok_h, 2)), 3, 3)
+                p.drawRoundedRect(QRectF(x, h - max(ok_h, 4), bw, max(ok_h, 4)), 5, 5)
                 if bad_h:
                     p.setBrush(QColor(pal["bad"]))
-                    p.drawRoundedRect(QRectF(x, h - ok_h - bad_h, bw, bad_h), 3, 3)
+                    p.drawRoundedRect(QRectF(x, h - ok_h - bad_h, bw, bad_h), 5, 5)
             if i % step == 0 or len(self.data) <= 8:
                 p.setPen(QColor(pal["muted"]))
                 p.drawText(QRectF(i * w - 6, h + 4, w + 12, 18), Qt.AlignmentFlag.AlignCenter, d["day"][5:].replace("-", "/") if len(self.data) > 8 else d["day"][5:])
@@ -105,6 +112,8 @@ class HourStrip(QWidget):
             p.setBrush(col)
             p.drawRoundedRect(QRectF(i * w + w * 0.15, h - bh, w * 0.7, bh), 2, 2)
         p.setPen(QColor(pal["muted"]))
+        if not any(self.hours):
+            p.drawText(QRectF(0, 0, self.width(), h), Qt.AlignmentFlag.AlignCenter, "No activity yet.")
         for hr in (0, 6, 12, 18, 23):
             p.drawText(QRectF(hr * w - 10, h + 2, w + 20, 16), Qt.AlignmentFlag.AlignCenter, f"{hr:02d}")
 
@@ -158,10 +167,10 @@ class InsightsTab(QWidget):
         self.daily = StackedDays()
         v.addWidget(self.daily)
         legend = QHBoxLayout()
-        legend.addWidget(label("● finished", wrap=False))
-        legend.itemAt(0).widget().setStyleSheet(f"color: {theme.palette()['accent']};")
-        legend.addWidget(label("● with problems", wrap=False))
-        legend.itemAt(1).widget().setStyleSheet(f"color: {theme.palette()['bad']};")
+        for text, colour in (("Finished", theme.palette()["accent"]), ("With problems", theme.palette()["bad"])):
+            sw = label(f"●  {text}", wrap=False)
+            sw.setStyleSheet(f"color: {colour}; padding-right: 14px;")
+            legend.addWidget(sw)
         legend.addStretch(1)
         v.addLayout(legend)
         v.addWidget(label("WHEN THEY WORK", eyebrow=True))
@@ -183,9 +192,11 @@ class InsightsTab(QWidget):
     def _stat(self, title: str, value: str):
         c = card()
         l = QVBoxLayout(c)
-        l.setContentsMargins(14, 10, 14, 10)
-        l.addWidget(label(title, muted=True))
-        val = label(value, h1=True)
+        l.setContentsMargins(16, 12, 16, 14)
+        l.setSpacing(4)
+        l.addWidget(label(title, muted=True, wrap=False))
+        val = label(value, wrap=False)
+        val.setStyleSheet(f"font-size: {theme.base_size() + 9}px; font-weight: 600; letter-spacing: -0.3px;")
         l.addWidget(val)
         return c, val
 

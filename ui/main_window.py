@@ -7,13 +7,13 @@ import sys
 import time
 from typing import NamedTuple
 
-from PySide6.QtCore import QEvent, QProcess, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QEvent, QProcess, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
                                QMenu, QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from core import quiet
-from . import icons, theme
+from . import icons, theme, motion
 from .api import Api, load_ui_config, save_ui_config
 from .chat_view import ChatPage
 from .dialogs import BotEditor, GroupDialog, NewBotDialog
@@ -54,14 +54,24 @@ class SideRow(QFrame):
         self.setProperty("checked", False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         h = QHBoxLayout(self)
-        h.setContentsMargins(8, theme.dp(6 if tall else 3), 10, theme.dp(6 if tall else 3))   # page rows are slimmer than Bot rows, so the whole sidebar still fits a 768px-high screen
-        h.setSpacing(10)
+        h.setContentsMargins(0, theme.dp(7 if tall else 4), 10, theme.dp(7 if tall else 4))   # page rows are slimmer than Bot rows, so the whole sidebar still fits a 768px-high screen
+        h.setSpacing(8)
+        # the accent bar on the left edge marks the open page or Bot; it stays in place (transparent) when the row is not current
+        self.bar = QFrame()
+        self.bar.setProperty("navbar", True)
+        self.bar.setProperty("on", False)
+        self.bar.setFixedSize(3, 16)
+        self.bar.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        h.addSpacing(4)
+        h.addWidget(self.bar, 0, Qt.AlignmentFlag.AlignVCenter)
+        h.addSpacing(3)
         self.leading = leading
         if leading is not None:
             h.addWidget(leading, 0, Qt.AlignmentFlag.AlignVCenter)
         col = QVBoxLayout()
         col.setSpacing(0)
         self.title = QLabel(title)
+        self.title.setObjectName("siderowtitle")
         self.title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         col.addWidget(self.title)
         self.sub = QLabel(sub)
@@ -87,6 +97,8 @@ class SideRow(QFrame):
     def set_checked(self, on: bool) -> None:
         self.setProperty("checked", on)
         repolish(self)
+        self.bar.setProperty("on", bool(on) and not motion.enabled())   # with motion on, the window's gliding indicator takes its place
+        repolish(self.bar)
 
     def set_sub(self, text: str, color: str | None = None) -> None:
         self.sub.setText(text)
@@ -620,14 +632,14 @@ class MainWindow(QMainWindow):
         self.lists.setContentsMargins(0, 4, 0, 4)
         self.lists.setSpacing(2)
         self.bots_head = label("BOTS", eyebrow=True)
-        self.bots_head.setContentsMargins(8, 4, 0, 2)
+        self.bots_head.setContentsMargins(10, 6, 0, 4)
         self.lists.addWidget(self.bots_head)
         self.bots_box = QVBoxLayout()
         self.bots_box.setSpacing(2)
         self.lists.addLayout(self.bots_box)
         gh = QHBoxLayout()
         self.groups_head = label("GROUPS", eyebrow=True)
-        self.groups_head.setContentsMargins(8, 12, 0, 2)
+        self.groups_head.setContentsMargins(10, 14, 0, 4)
         gh.addWidget(self.groups_head)
         gh.addStretch(1)
         self.group_add = icon_button("plus", "New group chat", self.new_group, size=14)
@@ -663,7 +675,7 @@ class MainWindow(QMainWindow):
         self.update_row.hide()
         v.addWidget(self.update_row)
         self.foot = label("", faint=True, wrap=False)
-        self.foot.setContentsMargins(8, 2, 0, 0)
+        self.foot.setContentsMargins(10, 6, 0, 0)
         v.addWidget(self.foot)
         return side
 
@@ -758,17 +770,55 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentWidget(self.chat)
             self.chat.show_group(ident)
         else:
-            self.stack.setCurrentWidget(self.pages[ident])
+            page = self.pages[ident]
+            changed = self.stack.currentWidget() is not page
+            self.stack.setCurrentWidget(page)
+            if changed:
+                motion.page_in(page)
         for k, r in self.rows.items():
             r.set_checked(k == key)
+        self.move_indicator()
         if self.stack.currentWidget() is not self.welcome:
             self.show_window()
+
+    def _indicator_row(self):
+        return self.rows.get(self.current_key)
+
+    def move_indicator(self, animate: bool = True) -> None:
+        """The accent bar on the sidebar's left edge glides to the open page or Bot instead of jumping."""
+        if not motion.enabled():
+            if getattr(self, "indicator", None) is not None:
+                self.indicator.hide()
+            return
+        if getattr(self, "indicator", None) is None:
+            self.indicator = QFrame(self)
+            self.indicator.setProperty("navbar", True)
+            self.indicator.setProperty("on", True)
+            self.indicator.setFixedSize(3, 16)
+            self.indicator.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        r = self._indicator_row()
+        if r is None or not r.isVisible():
+            self.indicator.hide()
+            return
+        top = r.mapTo(self, QPoint(7, (r.height() - 16) // 2))
+        was_hidden = not self.indicator.isVisible()
+        self.indicator.show()
+        self.indicator.raise_()
+        if was_hidden or not animate:
+            self.indicator.move(top)
+        else:
+            motion.glide(self.indicator, top)
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        QTimer.singleShot(0, lambda: self.move_indicator(False))
 
     def show_welcome(self) -> None:
         self.current_key = ""
         self.stack.setCurrentWidget(self.welcome)
         for r in self.rows.values():
             r.set_checked(False)
+        self.move_indicator()
 
     def show_page(self, key: str) -> None:
         self.select(f"page:{key}")
@@ -779,6 +829,7 @@ class MainWindow(QMainWindow):
         self.chat.show_bot(bot_id, thread_id, draft)
         for k, r in self.rows.items():
             r.set_checked(k == self.current_key)
+        self.move_indicator()
 
     def show_group(self, gid: str) -> None:
         self.select(f"group:{gid}")

@@ -9,7 +9,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QSizePolicy, QStackedWidget,
                                QVBoxLayout, QWidget)
 
-from . import icons, theme
+from . import icons, theme, motion
 
 PAGE_MARGINS = (32, 26, 32, 20)
 
@@ -25,10 +25,12 @@ def prop(w: QWidget, name: str, value) -> QWidget:
     return w
 
 
-def label(text: str = "", muted: bool = False, h1: bool = False, h2: bool = False, wrap: bool = True, faint: bool = False, eyebrow: bool = False) -> QLabel:
+def label(text: str = "", muted: bool = False, h1: bool = False, h2: bool = False, wrap: bool = True, faint: bool = False, eyebrow: bool = False,
+          caption: bool = False) -> QLabel:
+    """Text with the type scale: h1 page title, h2 section title, muted body note, faint/caption small print, eyebrow section heading."""
     lb = QLabel(text)
     lb.setWordWrap(wrap)
-    for k, v in (("muted", muted), ("h1", h1), ("h2", h2), ("faint", faint), ("eyebrow", eyebrow)):
+    for k, v in (("muted", muted), ("h1", h1), ("h2", h2), ("faint", faint), ("eyebrow", eyebrow), ("caption", caption)):
         if v:
             lb.setProperty(k, True)
     lb.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -53,6 +55,7 @@ def button(text: str = "", primary: bool = False, danger: bool = False, flat: bo
     b = QPushButton(text)
     if primary:
         b.setProperty("primary", True)
+        motion.glow(b, theme.palette()["accent"])
     if danger:
         b.setProperty("danger", True)
     if flat:
@@ -131,7 +134,7 @@ class PageHeader(QWidget):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(12)
         col = QVBoxLayout()
-        col.setSpacing(4)
+        col.setSpacing(6)
         self.title = label(title, h1=True, wrap=False)
         col.addWidget(self.title)
         self.sub = label(subtitle, muted=True)
@@ -149,6 +152,35 @@ def page_layout(w: QWidget, header: PageHeader | None = None) -> QVBoxLayout:
     if header:
         v.addWidget(header)
     return v
+
+
+def empty_state(icon: str, title: str, text: str = "", action: str = "", on: Callable | None = None, primary: bool = True) -> QFrame:
+    """A friendly placeholder for a list or table with nothing in it: icon, one short sentence and (optionally) one action.
+    The optional button is exposed as `.action_btn` (None when there is no action)."""
+    f = QFrame()
+    f.setProperty("card", "empty")
+    v = QVBoxLayout(f)
+    v.setContentsMargins(24, 28, 24, 28)
+    v.setSpacing(8)
+    p = theme.palette()
+    ic = QLabel()
+    ic.setPixmap(icons.pixmap(icon, p["accent"], 28))
+    ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    v.addWidget(ic)
+    # labels take the full card width (centred text) so word wrap gets a real width and nothing is cut off
+    t = label(title, h2=True, wrap=True)
+    t.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    v.addWidget(t)
+    if text:
+        b = label(text, muted=True)
+        b.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(b)
+    f.action_btn = None
+    if action:
+        f.action_btn = button(action, primary=primary, on=on)
+        v.addSpacing(6)
+        v.addWidget(f.action_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+    return f
 
 
 class Section(QFrame):
@@ -238,7 +270,8 @@ class Toasts(QObject):
         lb.raise_()
         self.items.append(lb)
         self.layout()
-        QTimer.singleShot(ms, lambda: self._drop(lb))
+        motion.toast_in(lb)
+        QTimer.singleShot(ms, lambda: motion.toast_out(lb, lambda: self._drop(lb)))
 
     def _drop(self, lb: QLabel) -> None:
         if lb in self.items:

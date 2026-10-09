@@ -1,6 +1,7 @@
 """Chat-style thread view: streaming replies, markdown, grouped activity with inline screenshots, approvals and a live view."""
 from __future__ import annotations
 
+import time
 import base64
 import html
 import os
@@ -11,7 +12,7 @@ from PySide6.QtGui import QGuiApplication, QKeyEvent, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit,
                                QPushButton, QScrollArea, QSizePolicy, QStackedLayout, QVBoxLayout, QWidget)
 
-from . import icons, theme
+from . import icons, theme, motion
 from .api import Api
 from .store import Store
 from .widgets import (ApprovalCard, AutoMarkdown, Avatar, ImageCache, Thumb, button, chip, clear_layout, icon_button, label, repolish, set_chip)
@@ -84,7 +85,7 @@ class ToolGroup(QFrame):
         self.summary.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         hh.addWidget(self.summary, 1)
         self.count = QLabel()
-        self.count.setProperty("faint", True)
+        self.count.setProperty("muted", True)
         hh.addWidget(self.count)
         self.chev = QLabel()
         hh.addWidget(self.chev)
@@ -173,13 +174,13 @@ class MessageList(QScrollArea):
         self.col.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.v = QVBoxLayout(self.col)
         self.v.setContentsMargins(0, 0, 0, 0)
-        self.v.setSpacing(12)
+        self.v.setSpacing(18)
         outer.addWidget(self.col, 100)
         outer.addStretch(1)
         self.tail = QWidget()
         self.tail_l = QVBoxLayout(self.tail)
         self.tail_l.setContentsMargins(0, 0, 0, 0)
-        self.tail_l.setSpacing(12)
+        self.tail_l.setSpacing(14)
         self.v.addWidget(self.tail)
         self.v.addStretch(1)
         self.setWidget(self.box)
@@ -190,6 +191,10 @@ class MessageList(QScrollArea):
 
     def add(self, w: QWidget) -> None:
         self.v.insertWidget(self.v.count() - 2, w)
+        now = time.monotonic()
+        if now - getattr(self, "_last_add", 0.0) > 0.25:     # a burst is a history load: no animation
+            motion.fade_in(w, 200)
+        self._last_add = now
 
     def clear(self) -> None:
         while self.v.count() > 2:
@@ -247,14 +252,14 @@ class CommandPopup(QListWidget):
         for c in rows[:8]:
             it = QListWidgetItem()
             it.setData(Qt.ItemDataRole.UserRole, c["name"])
-            it.setSizeHint(QSize(0, 34))
+            it.setSizeHint(QSize(0, 38))
             self.addItem(it)
             lb = QLabel(f"<b>{html.escape(c['usage'])}</b>  <span style='color:{p['muted']}'>{html.escape(c['summary'])}</span>")
-            lb.setStyleSheet("background: transparent; padding: 0 8px;")
+            lb.setStyleSheet("background: transparent; padding: 0 8px; font-size: 13px;")
             lb.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             self.setItemWidget(it, lb)
         self.setCurrentRow(0)
-        self.setFixedHeight(min(len(rows), 8) * 34 + 14)
+        self.setFixedHeight(min(len(rows), 8) * 38 + 14)
         self.show()
         self.raise_()
 
@@ -296,7 +301,7 @@ class Composer(QPlainTextEdit):
     def _grow(self) -> None:
         lines = max(1, min(6, self.document().blockCount() + self.toPlainText().count("\n") * 0))
         h = int(self.document().size().height()) + 14
-        self.setFixedHeight(max(36, min(h, 150)))
+        self.setFixedHeight(max(46, min(h, 160)))
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
         pop = self.popup
@@ -432,7 +437,10 @@ class EmptyState(QWidget):
         self.sub.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.sub.setMaximumWidth(520)
         v.addWidget(self.sub, 0, Qt.AlignmentFlag.AlignHCenter)
-        v.addSpacing(10)
+        v.addSpacing(14)
+        self.try_label = label("Try asking", muted=True, wrap=False)
+        self.try_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        v.addWidget(self.try_label, 0, Qt.AlignmentFlag.AlignHCenter)
         self.chips = QVBoxLayout()
         self.chips.setSpacing(8)
         v.addLayout(self.chips)
@@ -442,6 +450,7 @@ class EmptyState(QWidget):
         self.title.setText(title)
         self.sub.setText(sub)
         clear_layout(self.chips)
+        self.try_label.setVisible(bool(suggestions))
         for s in suggestions:
             b = QPushButton(s if len(s) < 90 else s[:88] + "…")
             b.setProperty("chipbtn", True)
@@ -449,6 +458,9 @@ class EmptyState(QWidget):
             b.setToolTip(s)
             b.clicked.connect(lambda _=False, s=s: self.suggestion.emit(s))
             self.chips.addWidget(b, 0, Qt.AlignmentFlag.AlignHCenter)
+
+
+READ_WIDTH = 680   # longest line of bot text, for readability on wide windows
 
 
 class ChatPage(QWidget):
@@ -557,6 +569,7 @@ class ChatPage(QWidget):
         row.setContentsMargins(8, 6, 8, 6)
         row.setSpacing(6)
         row.addWidget(icon_button("paperclip", "Attach an image", self.attach), 0, Qt.AlignmentFlag.AlignBottom)
+        row.setContentsMargins(10, 6, 6, 6)
         self.input = Composer()
         self.input.send.connect(self.send)
         self.input.focusChanged.connect(self._focus_ring)
@@ -571,11 +584,15 @@ class ChatPage(QWidget):
         row.addWidget(self.input, 1)
         self.btn_send = icon_button("send", "Send (Enter)", self.send, kind="accent")
         self.btn_stop = icon_button("stop", "Stop this Bot", self.stop, kind="danger")
+        for b in (self.btn_send, self.btn_stop):
+            b.setFixedSize(40, 40)
+            b.setStyleSheet("QPushButton { min-width: 40px; max-width: 40px; min-height: 40px; max-height: 40px; border-radius: 20px; }")
+            b.setIconSize(QSize(18, 18))
         self.btn_stop.hide()
         row.addWidget(self.btn_send, 0, Qt.AlignmentFlag.AlignBottom)
         row.addWidget(self.btn_stop, 0, Qt.AlignmentFlag.AlignBottom)
         iv.addWidget(self.comp_frame)
-        hint = label("Enter to send  ·  Shift+Enter for a new line  ·  / for commands  ·  Bots ask before anything consequential", faint=True, wrap=False)
+        hint = label("Enter to send  ·  Shift+Enter for a new line  ·  / for commands  ·  Bots ask before anything consequential", muted=True, wrap=False)
         hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         iv.addWidget(hint)
         cw.addWidget(inner, 100)
@@ -772,10 +789,10 @@ class ChatPage(QWidget):
         if t == "user":
             f = QFrame()
             f.setStyleSheet(f"background: {p['user']}; border-radius: 16px;")
-            f.setMaximumWidth(620)
-            f.setMinimumWidth(max(110, min(620, 44 + len(it["text"] or "") * 7)))
+            f.setMaximumWidth(560)
+            f.setMinimumWidth(max(110, min(560, 44 + len(it["text"] or "") * 7)))
             l = QVBoxLayout(f)
-            l.setContentsMargins(16, 11, 16, 11)
+            l.setContentsMargins(16, 12, 16, 12)
             l.setSpacing(6)
             md = AutoMarkdown(it["text"] or "")
             l.addWidget(md)
@@ -861,6 +878,7 @@ class ChatPage(QWidget):
 
     def _assistant_bubble(self, text: str, name: str, emoji: str, mid: int | None) -> QWidget:
         w = AutoMarkdown(text)
+        w.setMaximumWidth(READ_WIDTH)
         if mid:
             w.setProperty("msg_id", mid)
             self._message_menu(w, "assistant", mid)
@@ -892,6 +910,7 @@ class ChatPage(QWidget):
             w = self.streams.get(sid)
             if w is None:
                 w = AutoMarkdown("")
+                w.setMaximumWidth(READ_WIDTH)
                 self.streams[sid] = w
                 self.cur_group = None
                 self.list.add(w)

@@ -5,7 +5,7 @@ import json
 import time
 
 from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox, QProgressBar, QPushButton,
                                QScrollArea, QSpinBox, QSplitter, QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
 
@@ -38,18 +38,25 @@ class DailyBars(QWidget):
         self.update()
 
     def paintEvent(self, e) -> None:
-        if not self.data:
-            return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         pal = theme.palette()
+        if not self.data:
+            p.setPen(QColor(pal["muted"]))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No token use this week yet.")
+            return
         mx = max([d["tokens"] for d in self.data] + [1])
         w = self.width() / len(self.data)
+        small = QFont(self.font())
+        small.setPixelSize(theme.base_size() - 1)
+        p.setFont(small)
         for i, d in enumerate(self.data):
             h = (self.height() - 28) * d["tokens"] / mx
             p.setBrush(QColor(pal["accent"]))
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(QRectF(i * w + w * 0.2, self.height() - 20 - h, w * 0.6, max(h, 2)), 4, 4)
+            # bar with rounded top corners (the base sits on the axis line)
+            bh = max(h, 4)
+            p.drawRoundedRect(QRectF(i * w + w * 0.2, self.height() - 20 - bh, w * 0.6, bh), 5, 5)
             p.setPen(QColor(pal["muted"]))
             p.drawText(QRectF(i * w, self.height() - 18, w, 16), Qt.AlignmentFlag.AlignCenter, d["day"])
 
@@ -126,9 +133,11 @@ class UsagePage(QWidget):
     def _stat(self, title: str, value: str):
         c = card()
         l = QVBoxLayout(c)
-        l.setContentsMargins(14, 10, 14, 10)
-        l.addWidget(label(title, muted=True))
-        val = label(value, h1=True)
+        l.setContentsMargins(16, 12, 16, 14)
+        l.setSpacing(4)
+        l.addWidget(label(title, muted=True, wrap=False))
+        val = label(value, wrap=False)
+        val.setStyleSheet(f"font-size: {theme.base_size() + 9}px; font-weight: 600; letter-spacing: -0.3px;")
         l.addWidget(val)
         return c, val
 

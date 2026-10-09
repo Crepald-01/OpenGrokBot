@@ -4,9 +4,10 @@ from __future__ import annotations
 import time
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QHeaderView, QLineEdit, QPlainTextEdit, QScrollArea, QTableWidget,
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QScrollArea, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
+from . import icons, theme
 from .api import Api
 from .store import Store
 from .widgets import ApprovalCard, button, clear_layout, label, PageHeader, page_layout
@@ -134,13 +135,31 @@ class InboxPage(QWidget):
                 it.widget().deleteLater()
         pend = self.store.approvals
         if not pend:
-            self.pending_l.insertWidget(0, label("Nothing needs your attention. ✓"))
+            self.pending_l.insertWidget(0, self._empty())
         for a in pend:
             c = ApprovalCard(a, self.store.bot_name(a["bot_id"]))
             c.decided.connect(self._decide)
             c.openBrowser.connect(self.openBrowser.emit)
             self.pending_l.insertWidget(self.pending_l.count() - 1, c)
         self.tabs.setTabText(0, f"Needs you ({len(pend)})" if pend else "Needs you")
+
+    def _empty(self) -> QWidget:
+        """Nothing is waiting: say so calmly, with a check icon, instead of a bare line of text."""
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(0, theme.dp(40), 0, theme.dp(40))
+        v.setSpacing(8)
+        ic = QLabel()
+        ic.setPixmap(icons.pixmap("check", theme.palette()["ok"], 32))
+        ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(ic)
+        head = label("All clear", h2=True, wrap=False)
+        head.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(head)
+        sub = label("Nothing needs your approval right now. Your Bots will ask here when they need you.", muted=True)
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(sub)
+        return w
 
     def _decide(self, aid: str, body: dict) -> None:
         self.api.post(f"/api/approvals/{aid}/decide", body, lambda _: self.store.refresh_approvals())

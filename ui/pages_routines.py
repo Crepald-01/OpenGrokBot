@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLineEdit, QMessageBox, QPlainTextEdit, QSplitter,
-                               QTableWidget, QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+                               QPushButton, QSplitter, QTableWidget, QTextBrowser, QVBoxLayout, QWidget)
 
+from . import icons, theme
 from .api import Api
 from .pages_inbox import fill_row, fmt_time, make_table
 from .store import Store
@@ -21,6 +22,90 @@ def describe_cron(expr: str) -> str:
     return expr
 
 
+# ------------------------------------------------------------------------------------------------ shared page pieces
+class EmptyState(QWidget):
+    """What a list shows when it has nothing yet: an icon, a short sentence and the one or two actions that start it."""
+
+    def __init__(self, icon: str, title: str, text: str, actions: list[QPushButton] | None = None):
+        super().__init__()
+        p = theme.palette()
+        v = QVBoxLayout(self)
+        v.setContentsMargins(theme.dp(24), theme.dp(32), theme.dp(24), theme.dp(32))
+        v.setSpacing(theme.dp(8))
+        badge = QLabel()
+        badge.setFixedSize(theme.dp(56), theme.dp(56))
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setPixmap(icons.pixmap(icon, p["accent"], theme.dp(26)))
+        badge.setStyleSheet(f"background: {p['panel2']}; border: 1px solid {p['line']}; border-radius: {theme.dp(28)}px;")
+        v.addWidget(badge, 0, Qt.AlignmentFlag.AlignHCenter)
+        v.addSpacing(theme.dp(4))
+        t = label(title, h2=True, wrap=False)
+        t.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(t)
+        d = label(text, muted=True)
+        d.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        d.setFixedWidth(theme.dp(420))   # a fixed measure, so the wrapped text gets its full height
+        text_row = QHBoxLayout()   # a row (not a centred column) so the wrapped text gets its full height
+        text_row.addStretch(1)
+        text_row.addWidget(d)
+        text_row.addStretch(1)
+        v.addLayout(text_row)
+        if actions:
+            v.addSpacing(theme.dp(8))
+            row = QHBoxLayout()
+            row.setSpacing(theme.dp(8))
+            row.addStretch(1)
+            for a in actions:
+                row.addWidget(a)
+            row.addStretch(1)
+            v.addLayout(row)
+        v.addStretch(1)
+
+
+def set_empty(table: QTableWidget, empty: QWidget) -> None:
+    """Show the table when it has rows, the empty state when it does not."""
+    has_rows = table.rowCount() > 0
+    table.setVisible(has_rows)
+    empty.setVisible(not has_rows)
+
+
+def table_with_empty(table: QTableWidget, empty: QWidget) -> QWidget:
+    box = QWidget()
+    v = QVBoxLayout(box)
+    v.setContentsMargins(0, 0, 0, 0)
+    v.setSpacing(0)
+    v.addWidget(table, 1)
+    v.addWidget(empty, 1)
+    return box
+
+
+def heading(title: str, caption: str = "") -> QHBoxLayout:
+    h = QHBoxLayout()
+    h.setSpacing(theme.dp(12))
+    h.addWidget(label(title, h2=True, wrap=False))
+    if caption:
+        h.addWidget(label(caption, muted=True, wrap=False))
+    h.addStretch(1)
+    return h
+
+
+def toolbar(primary: list[QPushButton], secondary: list[QPushButton], danger: list[QPushButton] | None = None) -> QHBoxLayout:
+    """One row of actions: the primary action first, a gap, the secondary ones, and destructive actions pushed to the right."""
+    bar = QHBoxLayout()
+    bar.setSpacing(theme.dp(8))
+    for b in primary:
+        bar.addWidget(b)
+    if primary and secondary:
+        bar.addSpacing(theme.dp(12))
+    for b in secondary:
+        bar.addWidget(b)
+    bar.addStretch(1)
+    for b in danger or []:
+        bar.addWidget(b)
+    return bar
+
+
+# ------------------------------------------------------------------------------------------------ dialog
 class RoutineDialog(QDialog):
     def __init__(self, api: Api, store: Store, routine: dict | None = None, parent=None):
         super().__init__(parent)
@@ -28,8 +113,10 @@ class RoutineDialog(QDialog):
         self.setWindowTitle("Edit routine" if routine else "New routine")
         self.resize(560, 520)
         v = QVBoxLayout(self)
+        v.setSpacing(theme.dp(12))
         v.addWidget(label("A routine runs on its own on a schedule, even when the app window is closed (the background service keeps running). Example: “generate pipeline overnight”.", muted=True))
         f = QFormLayout()
+        f.setVerticalSpacing(theme.dp(10))
         self.name = QLineEdit(routine["name"] if routine else "")
         self.bot = QComboBox()
         for b in store.bots:
@@ -95,6 +182,7 @@ class RoutineDialog(QDialog):
             self.api.post("/api/routines", body, lambda _: self.accept(), fail)
 
 
+# ------------------------------------------------------------------------------------------------ page
 class RoutinesPage(QWidget):
     openThread = Signal(str, str)
 
@@ -106,26 +194,28 @@ class RoutinesPage(QWidget):
         if embedded:   # shown inside the Automations page, which has its own header
             v.setContentsMargins(0, 12, 0, 0)
             v.addWidget(label("Save a skill as a scheduled routine per Bot. Routines run unattended in the background service and ask you only when something needs approval.", muted=True))
-        bar = QHBoxLayout()
-        bar.addWidget(button("New routine…", primary=True, on=self.new))
-        bar.addWidget(button("Edit…", on=self.edit))
-        bar.addWidget(button("Run now", on=self.run_now))
-        bar.addWidget(button("Enable / disable", on=self.toggle))
-        bar.addWidget(button("Delete", danger=True, on=self.delete))
-        bar.addStretch(1)
-        v.addLayout(bar)
+        new_btn = button("New routine…", primary=True, on=self.new)
+        v.addLayout(toolbar([new_btn],
+                            [button("Edit…", on=self.edit), button("Run now", on=self.run_now), button("Enable / disable", on=self.toggle)],
+                            [button("Delete", danger=True, on=self.delete)]))
         split = QSplitter(Qt.Orientation.Vertical)
         self.table = make_table(["Routine", "Bot", "Schedule", "Next run", "Last result", "On"], 0)
         self.table.itemSelectionChanged.connect(self.load_runs)
-        split.addWidget(self.table)
+        self.table_empty = EmptyState("routines", "No routines yet",
+                                      "A routine is a skill that runs on a schedule, for example “generate the pipeline report every weekday at 8:00”. It keeps running when the window is closed.",
+                                      [button("New routine…", primary=True, on=self.new)])
+        split.addWidget(table_with_empty(self.table, self.table_empty))
         lower = QWidget()
         lv = QVBoxLayout(lower)
-        lv.setContentsMargins(0, 8, 0, 0)
-        lv.addWidget(label("Run history", h2=True))
+        lv.setContentsMargins(0, theme.dp(16), 0, 0)
+        lv.setSpacing(theme.dp(10))
+        lv.addLayout(heading("Run history", "Newest first. Select a run to read its result, double-click to open its thread."))
         self.runs = make_table(["Started", "Routine", "Status", "Took", "Result"], 4)
         self.runs.itemSelectionChanged.connect(self.show_result)
         self.runs.cellDoubleClicked.connect(lambda r, c: self.open_run(r))
-        lv.addWidget(self.runs, 2)
+        self.runs_empty = EmptyState("history", "No runs yet", "Each run is listed here with its result. Select a routine and press Run now to try it.",
+                                     [button("Run now", on=self.run_now)])
+        lv.addWidget(table_with_empty(self.runs, self.runs_empty), 2)
         self.result = QTextBrowser()
         self.result.setMaximumHeight(150)
         self.result.setPlaceholderText("Select a run to read its result. Double-click to open the full thread.")
@@ -144,7 +234,6 @@ class RoutinesPage(QWidget):
             sel = self.selected_id()
             self.routines = rows
             self.table.setRowCount(0)
-            import time
             for r in rows:
                 nxt = fmt_time(r["next_run_at"]) if r["enabled"] and r["next_run_at"] else "—"
                 last = ("running…" if r["running"] else r["last_status"] or "never")
@@ -152,6 +241,7 @@ class RoutinesPage(QWidget):
                 if r["id"] == sel:
                     self.table.selectRow(row)
             self.table.resizeRowsToContents()
+            set_empty(self.table, self.table_empty)
             if self.table.currentRow() < 0 and rows:
                 self.table.selectRow(0)
             self.load_runs()
@@ -174,6 +264,7 @@ class RoutinesPage(QWidget):
                 took = f"{int(r['ended_at'] - r['started_at'])}s" if r.get("ended_at") else "…"
                 fill_row(self.runs, [fmt_time(r["started_at"]), r["routine_name"] or "", r["status"], took, (r["result"] or r["error"] or "")[:200]], r)
             self.runs.resizeRowsToContents()
+            set_empty(self.runs, self.runs_empty)
         self.api.get("/api/routine_runs", ok, params={"routine_id": s["id"]} if s else {})
 
     def show_result(self) -> None:

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
 from . import theme
 from .api import Api
 from .pages_inbox import fill_row, fmt_time, make_table
-from .pages_routines import PRESETS, RoutinesPage, describe_cron
+from .pages_routines import PRESETS, EmptyState, RoutinesPage, describe_cron, heading, set_empty, table_with_empty, toolbar
 from .store import Store
 from .widgets import PageHeader, button, clear_layout, label, page_layout
 
@@ -81,7 +81,7 @@ class WorkflowDialog(QDialog):
         f.addRow("About", self.desc)
         v.addLayout(f)
         v.addWidget(label("Steps", h2=True))
-        v.addWidget(label(PLACEHOLDERS_WORKFLOW, faint=True))
+        v.addWidget(label(PLACEHOLDERS_WORKFLOW, muted=True))
         self.rows: list[StepRow] = []
         holder = QWidget()
         self.steps_l = QVBoxLayout(holder)
@@ -201,27 +201,28 @@ class WorkflowsTab(QWidget):
         v.setContentsMargins(0, 12, 0, 0)
         v.setSpacing(12)
         v.addWidget(label("A pipeline of Bots: the first does its part, its result goes to the next, and so on. Run one by hand, on a schedule, or from a trigger.", muted=True))
-        bar = QHBoxLayout()
-        bar.addWidget(button("New workflow…", primary=True, on=self.new))
-        bar.addWidget(button("Edit…", on=self.edit))
-        bar.addWidget(button("Run…", icon="play", on=self.run))
-        bar.addWidget(button("Stop", on=self.stop))
-        bar.addWidget(button("Enable / disable", on=self.toggle))
-        bar.addWidget(button("Delete", danger=True, on=self.delete))
-        bar.addStretch(1)
-        v.addLayout(bar)
+        v.addLayout(toolbar([button("New workflow…", primary=True, on=self.new)],
+                            [button("Edit…", on=self.edit), button("Run…", icon="play", on=self.run), button("Stop", on=self.stop),
+                             button("Enable / disable", on=self.toggle)],
+                            [button("Delete", danger=True, on=self.delete)]))
         split = QSplitter(Qt.Orientation.Vertical)
         self.table = make_table(["Workflow", "Steps", "Schedule", "Next run", "Last run", "On"], 1)
         self.table.itemSelectionChanged.connect(self.load_runs)
-        split.addWidget(self.table)
+        self.table_empty = EmptyState("merge", "No workflows yet",
+                                      "A workflow passes work from Bot to Bot: the first does its part and its result goes to the next. Good for a weekly brief or a review pipeline.",
+                                      [button("New workflow…", primary=True, on=self.new)])
+        split.addWidget(table_with_empty(self.table, self.table_empty))
         lower = QWidget()
         lv = QVBoxLayout(lower)
-        lv.setContentsMargins(0, 8, 0, 0)
-        lv.addWidget(label("Run history", h2=True))
+        lv.setContentsMargins(0, theme.dp(16), 0, 0)
+        lv.setSpacing(theme.dp(10))
+        lv.addLayout(heading("Run history", "Newest first. Select a run to see what each step produced."))
         self.runs = make_table(["Started", "Workflow", "Status", "Took", "Result"], 4)
         self.runs.itemSelectionChanged.connect(self.show_run)
         self.runs.cellDoubleClicked.connect(lambda r, c: self.open_run(r))
-        lv.addWidget(self.runs, 2)
+        self.runs_empty = EmptyState("history", "No runs yet", "Run a workflow by hand, on its schedule or from a trigger, and each step's result shows up here.",
+                                     [button("Run…", icon="play", on=self.run)])
+        lv.addWidget(table_with_empty(self.runs, self.runs_empty), 2)
         self.detail = QTextBrowser()
         self.detail.setMaximumHeight(170)
         self.detail.setPlaceholderText("Select a run to read what every step produced. Double-click to open the last step's chat.")
@@ -248,6 +249,7 @@ class WorkflowsTab(QWidget):
                 if w["id"] == sel:
                     self.table.selectRow(row)
             self.table.resizeRowsToContents()
+            set_empty(self.table, self.table_empty)
             if self.table.currentRow() < 0 and self.workflows:
                 self.table.selectRow(0)
             self.load_runs()
@@ -269,6 +271,7 @@ class WorkflowsTab(QWidget):
             for r in d["runs"]:
                 fill_row(self.runs, [fmt_time(r["started_at"]), r.get("workflow_name") or "", status_text(r["status"]), took(r), (r["result"] or r["error"] or "")[:160].replace("\n", " ")], r)
             self.runs.resizeRowsToContents()
+            set_empty(self.runs, self.runs_empty)
         self.api.get(f"/api/workflows/{s['id']}/runs" if s else "/api/workflows", (lambda d: ok(d)) if s else (lambda d: ok({"runs": d["runs"]})))
 
     def show_run(self) -> None:
@@ -351,13 +354,13 @@ class WebhookShown(QDialog):
         row.addWidget(self.copy_btn)
         row.addStretch(1)
         v.addLayout(row)
-        v.addWidget(label("Try it from PowerShell:", faint=True))
+        v.addWidget(label("Try it from PowerShell:", muted=True))
         ex = QPlainTextEdit(f"Invoke-RestMethod -Method Post -Uri \"{url}\" -ContentType application/json -Body '{{\"hello\": \"world\"}}'")
         ex.setReadOnly(True)
         ex.setFont(theme.mono())
         ex.setFixedHeight(70)
         v.addWidget(ex)
-        v.addWidget(label("The address works on this PC. To call it from other devices, use this PC's network address instead of 127.0.0.1 (turn on phone access in Settings > Mobile) and keep it private.", faint=True))
+        v.addWidget(label("The address works on this PC. To call it from other devices, use this PC's network address instead of 127.0.0.1 (turn on phone access in Settings > Mobile) and keep it private.", muted=True))
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         bb.rejected.connect(self.reject)
         bb.accepted.connect(self.accept)
@@ -412,7 +415,7 @@ class TriggerDialog(QDialog):
         self.dry.setChecked(bool(trigger and trigger["dry_run"]))
         f.addRow("", self.dry)
         v.addLayout(f)
-        v.addWidget(label(PLACEHOLDERS_WEBHOOK if kind == "webhook" else PLACEHOLDERS_FOLDER, faint=True))
+        v.addWidget(label(PLACEHOLDERS_WEBHOOK if kind == "webhook" else PLACEHOLDERS_FOLDER, muted=True))
         self.err = label("")
         v.addWidget(self.err)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -453,28 +456,28 @@ class TriggersTab(QWidget):
         v.setContentsMargins(0, 12, 0, 0)
         v.setSpacing(12)
         v.addWidget(label("Start a Bot (or a workflow) when something happens: a webhook is called, or a file appears in a workspace folder.", muted=True))
-        bar = QHBoxLayout()
-        bar.addWidget(button("New webhook…", primary=True, icon="link", on=lambda: self.new("webhook")))
-        bar.addWidget(button("New folder watch…", icon="folder", on=lambda: self.new("folder")))
-        bar.addWidget(button("Edit…", on=self.edit))
-        bar.addWidget(button("Test fire", icon="play", on=self.fire))
-        bar.addWidget(button("New address…", on=self.regenerate))
-        bar.addWidget(button("Enable / disable", on=self.toggle))
-        bar.addWidget(button("Delete", danger=True, on=self.delete))
-        bar.addStretch(1)
-        v.addLayout(bar)
+        v.addLayout(toolbar([button("New webhook…", primary=True, icon="link", on=lambda: self.new("webhook"))],
+                            [button("New folder watch…", icon="folder", on=lambda: self.new("folder")), button("Edit…", on=self.edit),
+                             button("Test fire", icon="play", on=self.fire), button("New address…", on=self.regenerate), button("Enable / disable", on=self.toggle)],
+                            [button("Delete", danger=True, on=self.delete)]))
         split = QSplitter(Qt.Orientation.Vertical)
         self.table = make_table(["Trigger", "Type", "Runs", "Fired", "Last result", "On"], 0)
         self.table.itemSelectionChanged.connect(self.load_runs)
-        split.addWidget(self.table)
+        self.table_empty = EmptyState("zap", "No triggers yet",
+                                      "A trigger starts a Bot when a webhook is called, or when a file appears in a workspace folder.",
+                                      [button("New webhook…", primary=True, icon="link", on=lambda: self.new("webhook")),
+                                       button("New folder watch…", icon="folder", on=lambda: self.new("folder"))])
+        split.addWidget(table_with_empty(self.table, self.table_empty))
         lower = QWidget()
         lv = QVBoxLayout(lower)
-        lv.setContentsMargins(0, 8, 0, 0)
-        lv.addWidget(label("Recent firings", h2=True))
+        lv.setContentsMargins(0, theme.dp(16), 0, 0)
+        lv.setSpacing(theme.dp(10))
+        lv.addLayout(heading("Recent firings", "Newest first. Select a firing to read the Bot's result."))
         self.runs = make_table(["Started", "Trigger", "Status", "Took", "Detail"], 4)
         self.runs.itemSelectionChanged.connect(self.show_run)
         self.runs.cellDoubleClicked.connect(lambda r, c: self.open_run(r))
-        lv.addWidget(self.runs, 2)
+        self.runs_empty = EmptyState("history", "No firings yet", "Each time a trigger fires, the Bot's result is listed here. Use Test fire to try one now.")
+        lv.addWidget(table_with_empty(self.runs, self.runs_empty), 2)
         self.detail = QTextBrowser()
         self.detail.setMaximumHeight(140)
         self.detail.setPlaceholderText("Select a firing to read the Bot's result. Double-click to open its chat.")
@@ -501,6 +504,7 @@ class TriggersTab(QWidget):
                 if t["id"] == sel:
                     self.table.selectRow(row)
             self.table.resizeRowsToContents()
+            set_empty(self.table, self.table_empty)
             if self.table.currentRow() < 0 and self.triggers:
                 self.table.selectRow(0)
             self.load_runs()
@@ -523,6 +527,7 @@ class TriggersTab(QWidget):
         for r in rows:
             fill_row(self.runs, [fmt_time(r["started_at"]), r.get("trigger_name") or "", status_text(r["status"]), took(r), r["detail"] or ""], r)
         self.runs.resizeRowsToContents()
+        set_empty(self.runs, self.runs_empty)
 
     def show_run(self) -> None:
         r = self.runs.currentRow()

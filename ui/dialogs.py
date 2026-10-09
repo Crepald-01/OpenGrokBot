@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPlainTextEdit, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from . import theme
 from .api import Api
 from .model_picker import ModelPicker
+from .settings_extra import StatusLine, action_row, dialog_body, form as form_layout
 from .store import Store
-from .widgets import button, chip, label
+from .widgets import button, label
 
 MEMORY_KINDS = ["preference", "role", "voice", "edge_case", "fact", "work_summary"]
 
@@ -25,8 +26,11 @@ class NewBotDialog(QDialog):
         super().__init__(parent)
         self.api, self.store = api, store
         self.setWindowTitle("New Bot")
-        self.resize(820, 560)
-        root = QHBoxLayout(self)
+        self.resize(820, 600)
+        outer = dialog_body(self, "New Bot", "Start from a role, or from scratch. Setup is a message: name the Bot and say what its job is.")
+        root = QHBoxLayout()
+        root.setSpacing(20)
+        outer.addLayout(root, 1)
         left = QVBoxLayout()
         left.addWidget(label("Start from a role", h2=True))
         self.list = QListWidget()
@@ -42,8 +46,9 @@ class NewBotDialog(QDialog):
         root.addLayout(left, 2)
 
         right = QVBoxLayout()
-        right.addWidget(label("Setup is a message. Name the Bot, say what its job is, and grant access when it asks.", muted=True))
-        form = QFormLayout()
+        right.setSpacing(12)
+        right.addWidget(label("Details", h2=True))
+        form = form_layout()
         self.name = QLineEdit()
         self.name.setPlaceholderText("e.g. Inbox")
         self.emoji = QLineEdit("🤖")
@@ -60,14 +65,9 @@ class NewBotDialog(QDialog):
         self.example_label = label("", muted=True)
         right.addWidget(self.example_label)
         right.addStretch(1)
-        self.err = label("")
-        self.err.setStyleSheet(f"color: {theme.palette()['bad']};")
+        self.err = StatusLine()
         right.addWidget(self.err)
-        bb = QHBoxLayout()
-        bb.addStretch(1)
-        bb.addWidget(button("Cancel", on=self.reject))
-        self.btn = button("Create Bot", primary=True, on=self.create)
-        bb.addWidget(self.btn)
+        bb, self.btn = action_row(self.reject, "Create Bot", self.create)
         right.addLayout(bb)
         root.addLayout(right, 3)
         self.list.setCurrentRow(0)
@@ -91,7 +91,7 @@ class NewBotDialog(QDialog):
     def create(self) -> None:
         name = self.name.text().strip()
         if not name:
-            self.err.setText("Give the Bot a name.")
+            self.err.err("Give the Bot a name.")
             return
         t = self.list.currentItem().data(Qt.ItemDataRole.UserRole)
         self.btn.setEnabled(False)
@@ -101,7 +101,7 @@ class NewBotDialog(QDialog):
             self.api.put(f"/api/bots/{bot['id']}", patch, lambda b: self._done(b))
 
         def fail(e: str) -> None:
-            self.err.setText(e)
+            self.err.err(e)
             self.btn.setEnabled(True)
 
         if t:
@@ -123,25 +123,25 @@ class NewBotDialog(QDialog):
             if first:
                 self.created.emit(first, "Set up the team for this week: triage my inbox daily, track receipts, and keep a running list of open recruiting candidates. Tell me what you need access to.")
             self.accept()
-        self.api.post("/api/teams", {}, ok, lambda e: (self.err.setText(e), self.btn.setEnabled(True)))
+        self.api.post("/api/teams", {}, ok, lambda e: (self.err.err(e), self.btn.setEnabled(True)))
 
 
 class GroupDialog(QDialog):
     def __init__(self, api: Api, store: Store, group: dict | None = None, parent=None):
         super().__init__(parent)
         self.api, self.store, self.group = api, store, group
-        self.setWindowTitle("Group chat" if not group else f"Edit {group['name']}")
-        self.resize(460, 520)
-        v = QVBoxLayout(self)
-        v.addWidget(label("Bots in a group coordinate on their own: they pass work, assign ownership and only pull you in for judgment calls.", muted=True))
-        form = QFormLayout()
+        title = "Group chat" if not group else f"Edit {group['name']}"
+        self.setWindowTitle(title)
+        self.resize(480, 560)
+        v = dialog_body(self, title, "Bots in a group coordinate on their own: they pass work, assign ownership and only pull you in for judgment calls.")
+        form = form_layout()
         self.name = QLineEdit(group["name"] if group else "")
         self.goal = QPlainTextEdit(group["goal"] if group else "")
         self.goal.setFixedHeight(70)
         form.addRow("Name", self.name)
         form.addRow("Goal", self.goal)
         v.addLayout(form)
-        v.addWidget(label("Members"))
+        v.addWidget(label("Members", h2=True))
         self.members = QListWidget()
         for b in store.bots:
             it = QListWidgetItem(f"{b['emoji']}  {b['name']}")
@@ -157,21 +157,19 @@ class GroupDialog(QDialog):
         if group and group.get("lead_bot"):
             self.lead.setCurrentIndex(max(0, self.lead.findData(group["lead_bot"])))
         v.addWidget(self.lead)
-        self.err = label("")
+        self.err = StatusLine()
         v.addWidget(self.err)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        bb.accepted.connect(self.save)
-        bb.rejected.connect(self.reject)
-        v.addWidget(bb)
+        row, _ = action_row(self.reject, "Save", self.save)
+        v.addLayout(row)
 
     def save(self) -> None:
         ids = [self.members.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.members.count()) if self.members.item(i).checkState() == Qt.CheckState.Checked]
         if not self.name.text().strip() or not ids:
-            self.err.setText("Name the group and pick at least one Bot.")
+            self.err.err("Name the group and pick at least one Bot.")
             return
         body = {"name": self.name.text().strip(), "goal": self.goal.toPlainText().strip(), "members": ids, "lead": self.lead.currentData(), "lead_bot": self.lead.currentData()}
-        done = lambda g: (self.store.refresh_groups(), self.accept())
-        fail = lambda e: self.err.setText(e)
+        done = lambda g: (self.store.refresh_groups(), self.accept())  # noqa: E731
+        fail = lambda e: self.err.err(e)  # noqa: E731
         if self.group:
             self.api.put(f"/api/groups/{self.group['id']}", body, done, fail)
         else:
@@ -186,14 +184,15 @@ class BotEditor(QDialog):
         self.api, self.store, self.bot_id = api, store, bot_id
         self.bot = store.bot(bot_id) or {}
         self.setWindowTitle(f"Edit {self.bot.get('name', 'Bot')}")
-        self.resize(760, 640)
-        v = QVBoxLayout(self)
+        self.resize(780, 660)
+        v = dialog_body(self, f"Edit {self.bot.get('name', 'Bot')}")
         tabs = QTabWidget()
         v.addWidget(tabs, 1)
 
         # profile
         p = QWidget()
-        pf = QFormLayout(p)
+        pf = form_layout()
+        p.setLayout(pf)
         self.name = QLineEdit(self.bot.get("name", ""))
         self.emoji = QLineEdit(self.bot.get("emoji", ""))
         self.emoji.setMaximumWidth(60)
@@ -210,7 +209,8 @@ class BotEditor(QDialog):
 
         # model
         m = QWidget()
-        mf = QFormLayout(m)
+        mf = form_layout()
+        m.setLayout(mf)
         self.prov = QComboBox()
         self.prov.addItem("Default provider", "")
         for pr in store.profiles:
@@ -254,7 +254,8 @@ class BotEditor(QDialog):
         # access and safety
         a = QWidget()
         av = QVBoxLayout(a)
-        af = QFormLayout()
+        av.setSpacing(10)
+        af = form_layout()
         self.approval = QComboBox()
         self.approval.addItem("Ask me for consequential actions", "ask")
         self.approval.addItem("Auto Review: a reviewer model approves low-risk actions", "auto_review")
@@ -272,27 +273,34 @@ class BotEditor(QDialog):
         af.addRow("Network", self.net)
         av.addLayout(af)
         nl = QHBoxLayout()
+        nl.setSpacing(12)
+        col1, col2 = QVBoxLayout(), QVBoxLayout()
+        col1.addWidget(label("Allowed domains, one per line", faint=True))
         self.allow = QPlainTextEdit("\n".join(self.bot.get("net_allow", [])))
-        self.allow.setPlaceholderText("Allowed domains, one per line\n*.example.com")
+        self.allow.setPlaceholderText("*.example.com")
+        col1.addWidget(self.allow)
+        col2.addWidget(label("Blocked domains, one per line", faint=True))
         self.deny = QPlainTextEdit("\n".join(self.bot.get("net_deny", [])))
-        self.deny.setPlaceholderText("Blocked domains, one per line")
-        nl.addWidget(self.allow)
-        nl.addWidget(self.deny)
+        self.deny.setPlaceholderText("tracker.example.com")
+        col2.addWidget(self.deny)
+        nl.addLayout(col1, 1)
+        nl.addLayout(col2, 1)
         av.addLayout(nl)
-        av.addWidget(label("Connectors this Bot may use (Bots also request access themselves when they need it):"))
+        av.addWidget(label("Connectors this Bot may use (Bots also request access themselves when they need it):", h2=True))
         self.grants = QListWidget()
         self.grants.setMaximumHeight(130)
         av.addWidget(self.grants)
-        av.addWidget(label("Standing approval rules created with “Approve & always allow”:"))
+        av.addWidget(label("Standing approval rules created with “Approve & always allow”:", h2=True))
         self.rules = QListWidget()
         self.rules.setMaximumHeight(80)
         av.addWidget(self.rules)
-        av.addWidget(button("Remove selected rule", on=self.remove_rule))
+        av.addWidget(button("Remove selected rule", danger=True, on=self.remove_rule))
         tabs.addTab(a, "Access && safety")
 
         # memory
         mem = QWidget()
         mv = QVBoxLayout(mem)
+        mv.setSpacing(10)
         mv.addWidget(label("What this Bot remembers across sessions. It is separate from every other Bot's memory. Edit or delete anything that is wrong.", muted=True))
         self.mem = QTableWidget(0, 4)
         self.mem.setHorizontalHeaderLabels(["Kind", "Memory", "Pinned", "Re-check"])
@@ -315,6 +323,7 @@ class BotEditor(QDialog):
         # share
         s = QWidget()
         sv = QVBoxLayout(s)
+        sv.setSpacing(10)
         sv.addWidget(label("Share this Bot as a package: role, skills and routines. Never secrets, credentials or conversations. A teammate can import it and run a copy.", muted=True))
         self.inc_mem = QCheckBox("Include stable preferences and role memory")
         sv.addWidget(self.inc_mem)
@@ -328,13 +337,10 @@ class BotEditor(QDialog):
         sv.addLayout(row)
         tabs.addTab(s, "Share && manage")
 
-        self.err = label("")
-        self.err.setStyleSheet(f"color: {theme.palette()['bad']};")
+        self.err = StatusLine()
         v.addWidget(self.err)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        bb.accepted.connect(self.save)
-        bb.rejected.connect(self.reject)
-        v.addWidget(bb)
+        row, _ = action_row(self.reject, "Save", self.save)
+        v.addLayout(row)
         self.load_extras()
 
     def load_extras(self) -> None:
@@ -444,4 +450,4 @@ class BotEditor(QDialog):
                 "net_allow": lines(self.allow.toPlainText()), "net_deny": lines(self.deny.toPlainText()), "grants": grants}
         if self.approval.isEnabled():
             body["approval_mode"] = self.approval.currentData()
-        self.api.put(f"/api/bots/{self.bot_id}", body, lambda _: (self.store.refresh_bots(), self.accept()), lambda e: self.err.setText(e))
+        self.api.put(f"/api/bots/{self.bot_id}", body, lambda _: (self.store.refresh_bots(), self.accept()), lambda e: self.err.err(e))

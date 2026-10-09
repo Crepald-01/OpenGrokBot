@@ -142,6 +142,13 @@ class RestDialog(QDialog):
         self.api.post("/api/plugins/rest", body, lambda _: self.accept(), lambda e: self.err.setText(e))
 
 
+def fit(b):
+    """Buttons are sized from their text once the stylesheet is applied, so the label is never cut off."""
+    b.ensurePolished()
+    b.setMinimumWidth(b.sizeHint().width() + 12)
+    return b
+
+
 class PluginsPage(QWidget):
     def __init__(self, api: Api, store: Store):
         super().__init__()
@@ -229,30 +236,34 @@ class PluginsPage(QWidget):
     def _plugin_card(self, p: dict) -> QFrame:
         c = card()
         h = QVBoxLayout(c)
-        h.setContentsMargins(14, 12, 14, 12)
+        h.setContentsMargins(18, 16, 18, 14)
+        h.setSpacing(8)
         top = QHBoxLayout()
+        top.setSpacing(10)
         top.addWidget(label(p["name"], h2=True, wrap=False))
         top.addWidget(chip({"builtin": "built-in", "declarative": "plugin", "python": "code plugin", "rest": "REST"}.get(p["kind"], p["kind"])))
+        top.addStretch(1)
         if not p["allowed"]:
             top.addWidget(chip("blocked by admin", "bad"))
         elif p["configured"]:
             top.addWidget(chip("connected", "ok"))
         else:
             top.addWidget(chip("needs setup", "warn"))
-        top.addStretch(1)
         h.addLayout(top)
         h.addWidget(label(p["description"], muted=True))
         tools = ", ".join(t["name"] + ("" if t["read_only"] else "*") for t in p["tools"][:8])
         if tools:
             h.addWidget(label("Tools: " + tools + ("…" if len(p["tools"]) > 8 else "") + "   (* asks for approval)", muted=True))
         row = QHBoxLayout()
+        row.setSpacing(8)
+        row.setContentsMargins(0, 4, 0, 0)
         if p["allowed"]:
-            row.addWidget(button("Configure…", on=lambda p=p: self.configure(p)))
+            row.addWidget(fit(button("Configure…", on=lambda p=p: self.configure(p))))
             if p["oauth"]:
-                row.addWidget(button("Connect…" if not p["connected"] else "Reconnect…", primary=not p["connected"], on=lambda p=p: self.connect_oauth(p)))
-            row.addWidget(button("Test", on=lambda p=p: self.test(p)))
+                row.addWidget(fit(button("Connect…" if not p["connected"] else "Reconnect…", primary=not p["connected"], on=lambda p=p: self.connect_oauth(p))))
+            row.addWidget(fit(button("Test", on=lambda p=p: self.test(p))))
         if p["removable"]:
-            row.addWidget(button("Remove", danger=True, on=lambda p=p: self.remove(p)))
+            row.addWidget(fit(button("Remove", danger=True, on=lambda p=p: self.remove(p))))
         row.addStretch(1)
         h.addLayout(row)
         return c
@@ -260,9 +271,12 @@ class PluginsPage(QWidget):
     def _catalog_card(self, e: dict, allowed: bool) -> QFrame:
         c = card()
         h = QHBoxLayout(c)
-        h.setContentsMargins(14, 12, 14, 12)
+        h.setContentsMargins(18, 16, 18, 16)
+        h.setSpacing(12)
         col = QVBoxLayout()
+        col.setSpacing(6)
         top = QHBoxLayout()
+        top.setSpacing(10)
         top.addWidget(label(e["name"], h2=True, wrap=False))
         top.addWidget(chip({"declarative": "no code", "python": "runs code"}.get(e.get("kind", ""), e.get("kind", ""))))
         top.addStretch(1)
