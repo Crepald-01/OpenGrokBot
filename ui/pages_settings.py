@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, 
                                QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressBar, QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
 from core import paths
-from . import theme
+from . import theme, motion
 from .api import Api, Connection, load_ui_config, save_ui_config
 from .model_picker import ModelPicker
 from .store import Store
@@ -690,6 +690,10 @@ class SettingsPage(QWidget):
         self.a_text.setCurrentIndex(max(0, self.a_text.findData(cfg0.get("text", "default"))))
         f.addRow("Text size", self.a_text)
         look.add(layout=f)
+        self.a_motion = QCheckBox("Reduce motion (turn off animations)")
+        self.a_motion.setChecked(bool(cfg0.get("reduce_motion", False)))
+        self.a_motion.toggled.connect(self.set_reduce_motion)
+        look.add(with_hint(self.a_motion, "Pages, cards, numbers, buttons and the sidebar stop animating. Takes effect at once."))
         v.addWidget(look)
 
         startup = Section("Startup and tray", "What happens when you close the window, and when you sign in to Windows.")
@@ -761,6 +765,18 @@ class SettingsPage(QWidget):
                     winreg.DeleteValue(k, "OpenGrokBot")
                 except OSError:
                     pass
+
+    def set_reduce_motion(self, on: bool) -> None:
+        """Applies at once (no Save needed): remember the choice, stop or resume animations and tidy the sidebar bar."""
+        cfg = load_ui_config()
+        cfg["reduce_motion"] = bool(on)
+        save_ui_config(cfg)
+        motion.set_reduce(on)
+        w = self.window()
+        if hasattr(w, "rows") and hasattr(w, "move_indicator"):
+            for k, r in w.rows.items():
+                r.set_checked(k == getattr(w, "current_key", ""))
+            w.move_indicator(False)
 
     def save_app(self) -> None:
         cfg = load_ui_config()

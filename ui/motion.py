@@ -17,6 +17,7 @@ OUT = QEasingCurve.Type.OutCubic
 INOUT = QEasingCurve.Type.InOutCubic
 
 _forced: bool | None = None
+_reduce: bool | None = None      # the user's "Reduce motion" choice (Settings > App), read from the ui config once
 _live: set = set()          # animations in flight (a Python reference keeps them alive)
 
 
@@ -26,18 +27,31 @@ def set_enabled(on: bool | None) -> None:
     _forced = on
 
 
+def reduced() -> bool:
+    """Whether the user switched animations off (Settings > App > Reduce motion)."""
+    global _reduce
+    if _reduce is None:
+        try:
+            from .api import load_ui_config
+            _reduce = bool(load_ui_config().get("reduce_motion", False))
+        except Exception:  # noqa: BLE001
+            _reduce = False
+    return _reduce
+
+
+def set_reduce(on: bool) -> None:
+    global _reduce
+    _reduce = bool(on)
+
+
 def enabled() -> bool:
     if _forced is not None:
         return _forced
+    if reduced():
+        return False
     if os.environ.get("OPENGROKBOT_MOTION") == "1":
         return True
-    if os.environ.get("QT_QPA_PLATFORM", "").lower() in ("offscreen", "minimal"):
-        return False
-    try:
-        from .api import load_ui_config
-        return not load_ui_config().get("reduce_motion", False)
-    except Exception:  # noqa: BLE001
-        return True
+    return os.environ.get("QT_QPA_PLATFORM", "").lower() not in ("offscreen", "minimal")
 
 
 def _keep(a: QAbstractAnimation) -> None:

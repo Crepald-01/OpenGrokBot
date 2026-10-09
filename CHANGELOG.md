@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.0
+
+A polish release: the whole app looks and feels more professional.
+
+- **Smooth motion.** Pages slide in and fade, the cards on them rise in one after another, the accent bar in the sidebar glides to the page or Bot you open, numbers on Home count up to their value, new chat messages ease in, toasts slide up and fade, dialogs fade in and primary buttons glow when you point at them. Motion is switched off automatically for tests, and by setting `"reduce_motion": true` in the app's `ui_config.json`.
+- **Clearer text and contrast.** A proper type scale and stronger contrast for secondary text, rounded cards, taller buttons, slim scrollbars, and visible hover, focus and selected states on lists, tables, tabs and menus.
+- **Helpful empty states.** Routines, run history, workflows, triggers, Inbox, Usage and Insights say what to do instead of showing a blank box.
+- **Better pages.** Home reads like a dashboard (big numbers, your team, a tidier activity feed). Knowledge results are cards with the source as a heading. Settings sections are titled cards with one-line descriptions and aligned forms. Diagnostics rows show a status badge and a bold "What to do" hint. Chat, Files, Skills and Plugins got the same spacing and card treatment.
+- **Reduce motion.** Settings > App has a new checkbox that turns every animation off at once.
+- Fixed a cut-off line in the New API token dialog.
+
 ## 2.0.1
 
 Updating is now one click, and you cannot miss that an update is out.
