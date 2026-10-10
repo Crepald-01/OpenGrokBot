@@ -72,6 +72,10 @@ For a team: tell the **Chief of Staff** *"Triage my inbox daily, track receipts,
 
 **Learn by demonstration.** In the take-over view press **Follow along**, do the job once, add notes, and stop. The Bot drafts a **skill** from the recorded steps (secrets are never recorded). Edit it, **test** it (dry run refuses consequential actions), activate it, and optionally schedule it as a **routine**.
 
+## Skill library
+
+Skills page > **Library…** lists ready-made skills. Pick one to read it, then **Install as draft**. Read it, edit it, and only then activate it. "Check for new skills" looks for updates online (and only when you click). You can also import a `.md`/`.zip` file or an https link; only import skills from people you trust, because a skill is a set of instructions your Bot will follow. Approvals still apply to everything a skill makes a Bot do.
+
 ## Writing skills
 
 Skills are markdown files in `%APPDATA%\OpenGrokBot\skills`, editable in the **Skills** page. Starter skills are copied there on first run.

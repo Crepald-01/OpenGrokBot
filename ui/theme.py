@@ -142,9 +142,28 @@ def _arrow_url(color: str) -> str:
         return ""
 
 
+def _check_url(color: str) -> str:
+    """A white tick on disk, used as the checked image of check boxes and list indicators."""
+    try:
+        import os
+        import tempfile
+
+        from . import icons
+        d = os.path.join(tempfile.gettempdir(), "opengrokbot-ui")
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, f"tick-{color.strip('#')}.png")
+        if not os.path.exists(path):
+            icons.pixmap("check", color, 14, 2.6).save(path, "PNG")
+        return path.replace("\\", "/")
+    except Exception:
+        return ""
+
+
 def qss() -> str:
     c = _current
     arrow = _arrow_url(c["muted"])
+    tick = _check_url(c["accent_text"])
+    tick_rule = f"image: url({tick});" if tick else "image: none;"
     fs, small, tiny = base_size(), base_size() - 1, base_size() - 2
     bv, bh = dp(6), dp(14) if dp(14) > 9 else 9
     iv = dp(8)
@@ -168,12 +187,12 @@ QLabel[chip="bad"] {{ background: {c['bad_bg']}; color: {c['bad']}; border-radiu
 QLabel[chip="work"] {{ background: {c['accent_dim']}; color: {c['accent']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
 QLabel[badge="true"] {{ background: {c['accent']}; color: {c['accent_text']}; border-radius: 9px; padding: 0px 6px; font-size: 11px; font-weight: 600; }}
 
-QFrame[card="true"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
-QFrame[card="hover"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
+QFrame[card="true"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 14px; }}
+QFrame[card="hover"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 14px; }}
 QFrame[card="hover"]:hover {{ border: 1px solid {c['accent_dim']}; background: {c['hover']}; }}
 QFrame[card="approval"] {{ background: {c['warn_bg']}; border: 1px solid {c['line2']}; border-left: 3px solid {c['warn']}; border-radius: 12px; }}
 QFrame[card="question"] {{ background: {c['accent_soft']}; border: 1px solid {c['line2']}; border-left: 3px solid {c['accent']}; border-radius: 12px; }}
-QFrame[card="tile"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; }}
+QFrame[card="tile"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 14px; }}
 QFrame[card="tile"][hot="true"] {{ background: {c['warn_bg']}; border: 1px solid {c['line2']}; }}
 QFrame[card="plain"] {{ background: transparent; border: none; }}
 QFrame[card="empty"] {{ background: {c['panel']}; border: 1px dashed {c['line2']}; border-radius: 12px; }}
@@ -191,12 +210,13 @@ QPushButton:hover {{ background: {c['raised']}; border-color: {c['faint']}; }}
 QPushButton:pressed {{ background: {c['line2']}; }}
 QPushButton:focus {{ border: 1px solid {c['accent']}; }}
 QPushButton:disabled {{ color: {c['faint']}; background: {c['panel']}; border-color: {c['line']}; }}
-QPushButton[primary="true"] {{ background: {c['accent']}; color: {c['accent_text']}; border: 1px solid {c['accent']}; font-weight: 600; }}
+QPushButton[primary="true"] {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 {c['accent_hi']}, stop:1 {c['accent']}); color: {c['accent_text']}; border: 1px solid {c['accent']}; font-weight: 600; }}
 QPushButton[primary="true"]:hover {{ background: {c['accent_hi']}; border-color: {c['accent_hi']}; }}
 QPushButton[primary="true"]:disabled {{ background: {c['accent_dim']}; color: {c['faint']}; border-color: {c['accent_dim']}; }}
 QPushButton[danger="true"] {{ background: transparent; border: 1px solid {c['line2']}; color: {c['bad']}; }}
 QPushButton[danger="true"]:hover {{ background: {c['bad_bg']}; border-color: {c['bad']}; }}
 QPushButton[flat="true"] {{ background: transparent; border: none; color: {c['muted']}; padding: 5px 9px; }}
+QPushButton[flat="true"]:focus, QPushButton[iconbtn="true"]:focus, QPushButton[side="true"]:focus {{ border: 1px solid {c['accent']}; }}
 QPushButton[flat="true"]:hover {{ color: {c['text']}; background: {c['hover']}; }}
 QPushButton[iconbtn="true"] {{ background: transparent; border: none; border-radius: 8px; padding: 0px; min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px; }}
 QPushButton[iconbtn="true"]:hover {{ background: {c['hover']}; }}
@@ -211,9 +231,9 @@ QPushButton[chipbtn="true"] {{ background: {c['panel']}; border: 1px solid {c['l
 QPushButton[chipbtn="true"]:hover {{ border-color: {c['accent']}; color: {c['text']}; background: {c['accent_soft']}; }}
 
 QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
-  background: {c['panel']}; border: 1px solid {c['line2']}; border-radius: 8px; padding: 6px 10px; selection-background-color: {c['accent_dim']}; }}
+  background: {c['panel']}; border: 1px solid {c['line2']}; border-radius: 9px; padding: 7px 11px; selection-background-color: {c['accent_dim']}; }}
 QLineEdit:hover, QPlainTextEdit:hover, QComboBox:hover, QSpinBox:hover {{ border-color: {c['faint']}; }}
-QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; background: {c['panel2']}; }}
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; background: {c['panel']}; }}
 QLineEdit:disabled, QPlainTextEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{ color: {c['faint']}; background: {c['bg']}; border-color: {c['line']}; }}
 QLineEdit[bare="true"], QPlainTextEdit[bare="true"] {{ border: none; background: transparent; padding: 2px 4px; }}
 QLineEdit[search="true"] {{ border-radius: 14px; padding: 6px 12px 6px 12px; background: {c['panel2']}; border: 1px solid transparent; }}
@@ -230,11 +250,13 @@ QSpinBox::up-button, QSpinBox::down-button {{ width: 0; border: none; }}
 QCheckBox {{ spacing: 9px; }}
 QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 5px; border: 1px solid {c['line2']}; background: {c['panel']}; }}
 QCheckBox::indicator:hover {{ border-color: {c['accent']}; }}
-QCheckBox::indicator:checked {{ background: {c['accent']}; border-color: {c['accent']}; image: none; }}
+QCheckBox::indicator:checked {{ background: {c['accent']}; border-color: {c['accent']}; {tick_rule} }}
+QCheckBox::indicator:checked:hover {{ background: {c['accent_hi']}; border-color: {c['accent_hi']}; }}
+QCheckBox:disabled {{ color: {c['faint']}; }}
 
 QListWidget, QTreeWidget, QTableWidget, QListView, QTableView, QTreeView {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 12px; alternate-background-color: {c['panel']}; }}
 QListWidget::item, QListView::item {{ padding: {iv}px 10px; border-radius: 8px; margin: 1px 4px; }}
-QListWidget::item:selected, QListView::item:selected {{ background: {c['select']}; color: {c['text']}; }}
+QListWidget::item:selected, QListView::item:selected {{ background: {c['select']}; color: {c['text']}; border-left: 2px solid {c['accent']}; }}
 QListWidget::item:hover:!selected, QListView::item:hover:!selected {{ background: {c['hover']}; }}
 QTreeWidget::item, QTreeView::item {{ padding: {dp(5)}px 8px; border-radius: 6px; }}
 QTreeWidget::item:selected, QTreeView::item:selected {{ background: {c['select']}; color: {c['text']}; }}
@@ -251,7 +273,7 @@ QTabWidget::pane {{ border: none; top: 0px; }}
 QTabBar {{ background: transparent; }}
 QTabBar::tab {{ background: transparent; padding: 9px 16px; margin-right: 2px; color: {c['muted']}; border: none; border-bottom: 2px solid transparent; }}
 QTabBar::tab:selected {{ color: {c['text']}; font-weight: 600; border-bottom: 2px solid {c['accent']}; }}
-QTabBar::tab:hover:!selected {{ color: {c['text']}; border-bottom: 2px solid {c['line2']}; }}
+QTabBar::tab:hover:!selected {{ color: {c['text']}; border-bottom: 2px solid {c['line2']}; background: {c['hover']}; border-top-left-radius: 8px; border-top-right-radius: 8px; }}
 
 QScrollArea {{ border: none; background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px 1px; }}
@@ -266,8 +288,8 @@ QSplitter::handle:horizontal {{ width: 1px; }}
 QSplitter::handle:vertical {{ height: 1px; }}
 QProgressBar {{ background: {c['panel2']}; border: none; border-radius: 4px; max-height: 8px; min-height: 8px; text-align: center; color: transparent; }}
 QProgressBar::chunk {{ background: {c['accent']}; border-radius: 4px; }}
-QMenu {{ background: {c['raised']}; border: 1px solid {c['line2']}; border-radius: 10px; padding: 6px; }}
-QMenu::item {{ padding: 7px 18px 7px 14px; border-radius: 6px; }}
+QMenu {{ background: {c['raised']}; border: 1px solid {c['line2']}; border-radius: 12px; padding: 6px; }}
+QMenu::item {{ padding: 8px 20px 8px 14px; border-radius: 8px; }}
 QMenu::item:selected {{ background: {c['accent_dim']}; }}
 QMenu::separator {{ height: 1px; background: {c['line']}; margin: 5px 8px; }}
 QTextBrowser {{ background: transparent; border: none; }}

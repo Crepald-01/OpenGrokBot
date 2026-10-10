@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0
+
+Downloadable skills, and a few small things.
+
+- **Skill library.** Skills page > Library… opens a browser of 20 ready-made skills (meeting notes to actions, weekly status report, competitor scan, price watch, release notes, dependency audit, travel planner and more). Search, filter by topic, read the full text, then install. Installed skills always arrive as drafts, with a note if the text mentions secrets, links or actions that send, spend or delete. The library works offline; "Check for new skills" fetches updates from the project site only when you click it, and every download is checked against its SHA-256.
+- **Import and export.** Import a skill from a `.md` or `.zip` file or an https link (with a trust warning), and export your skills as a zip to share or back up.
+- **UI rework.** Check boxes show a tick, primary buttons have a soft gradient, cards, inputs and menus are rounder with a calmer focus state, keyboard focus is visible on icon and flat buttons, card lists no longer show a stray horizontal scrollbar, and icon buttons have accessible names. The Skills page has a tidier left column (aligned buttons, a short hint instead of an empty box) and no empty status pill. Run history shows one hint instead of a second large empty state.
+- **Remembers your window.** Size and position come back as you left them.
+- **F1** opens the keyboard shortcut list.
+- **Paste and drop images.** Paste a screenshot into the message box or drag PNG/JPG files onto the chat to attach them (up to 6, 8 MB each).
+- API tokens cannot use the library endpoints.
+
 ## 2.1.0
 
 A polish release: the whole app looks and feels more professional.

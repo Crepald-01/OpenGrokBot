@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
 
 from . import theme
 from .api import Api
+from .library_dialog import LibraryDialog
 from .pages_files import set_row, styled_list
 from .pages_inbox import fmt_time
 from .store import Store
@@ -76,15 +77,22 @@ class SkillsPage(QWidget):
         lv.addWidget(self.list, 2)
         row = QHBoxLayout()
         row.addWidget(button("New skill", on=self.new))
+        row.addWidget(button("Library…", on=self.library))
+        row.addStretch(1)
         row.addWidget(button("Delete", danger=True, on=self.delete))
         lv.addLayout(row)
-        lv.addWidget(label("Learned by demonstration", h2=True))
+        head = label("Learned by demonstration", h2=True)
+        head.setContentsMargins(0, 10, 0, 0)
+        lv.addWidget(head)
         self.rec_list = styled_list(QListWidget())
-        self.rec_list.setMaximumHeight(160)
-        lv.addWidget(self.rec_list, 1)
+        self.rec_list.setMaximumHeight(120)
+        lv.addWidget(self.rec_list)
+        self.rec_hint = label("Nothing learned yet. Use Follow along… and show a Bot a job once; it can turn what it saw into a skill.", muted=True, caption=True)
+        lv.addWidget(self.rec_hint)
         r2 = QHBoxLayout()
         r2.addWidget(button("Follow along…", on=self.follow))
         r2.addWidget(button("Draft skill", on=self.draft))
+        r2.addStretch(1)
         lv.addLayout(r2)
         split.addWidget(left)
 
@@ -94,6 +102,7 @@ class SkillsPage(QWidget):
         top = QHBoxLayout()
         self.name_label = label("", h2=True, wrap=False)
         self.status_chip = chip("")
+        self.status_chip.setVisible(False)
         top.addWidget(self.name_label, 1)
         top.addWidget(self.status_chip)
         rv.addLayout(top)
@@ -153,10 +162,8 @@ class SkillsPage(QWidget):
                         (r["status"], {"recording": "warn", "drafted": "ok"}.get(r["status"], "muted")))
                 it.setData(Qt.ItemDataRole.UserRole, r["id"])
                 self.rec_list.addItem(it)
-            if not rows:
-                hint = QListWidgetItem("Nothing learned yet. Use Follow along… and show a Bot a job once.")
-                hint.setFlags(Qt.ItemFlag.NoItemFlags)
-                self.rec_list.addItem(hint)
+            self.rec_list.setVisible(bool(rows))
+            self.rec_hint.setVisible(not rows)
         self.api.get("/api/recordings", recs)
 
     def _pick(self, row: int) -> None:
@@ -173,6 +180,7 @@ class SkillsPage(QWidget):
         self.api.get(f"/api/skills/{name}", ok)
 
     def _status(self, status: str) -> None:
+        self.status_chip.setVisible(True)
         self.status_chip.setText("active" if status == "active" else "draft")
         self.status_chip.setProperty("chip", "ok" if status == "active" else "warn")
         self.status_chip.style().unpolish(self.status_chip)
@@ -195,6 +203,12 @@ class SkillsPage(QWidget):
         if ok and n.strip():
             slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in n.strip().lower())
             self.api.put(f"/api/skills/{slug}", {"raw": NEW_SKILL.format(name=slug, title=n.strip())}, lambda s: self.load(s["name"]))
+
+    def library(self) -> None:
+        d = LibraryDialog(self.api, self)
+        d.installed.connect(lambda n: self.load(n))
+        d.exec()
+        self.load()
 
     def delete(self) -> None:
         if self.current and QMessageBox.question(self, "Delete skill", f"Delete {self.current}?") == QMessageBox.StandardButton.Yes:

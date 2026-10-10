@@ -213,8 +213,7 @@ class RoutinesPage(QWidget):
         self.runs = make_table(["Started", "Routine", "Status", "Took", "Result"], 4)
         self.runs.itemSelectionChanged.connect(self.show_result)
         self.runs.cellDoubleClicked.connect(lambda r, c: self.open_run(r))
-        self.runs_empty = EmptyState("history", "No runs yet", "Each run is listed here with its result. Select a routine and press Run now to try it.",
-                                     [button("Run now", on=self.run_now)])
+        self.runs_empty = EmptyState("history", "No runs yet", "Each run is listed here with its result. Select a routine and press Run now to try it.")
         lv.addWidget(table_with_empty(self.runs, self.runs_empty), 2)
         self.result = QTextBrowser()
         self.result.setMaximumHeight(150)

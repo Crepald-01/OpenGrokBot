@@ -1,0 +1,164 @@
+{
+ "skills": [
+  {
+   "name": "changelog-writer",
+   "description": "Keep a CHANGELOG file current from recent commits in the Keep a Changelog format. Use after merges.",
+   "tags": "dev",
+   "version": 1,
+   "sha256": "3bcd392a49c5508b7f9868edb34368785aa274e9c36bbd77afdf94988b09aabb",
+   "file": "changelog-writer.md"
+  },
+  {
+   "name": "competitor-scan",
+   "description": "Scan competitor websites and public pages for changes in pricing, features, and launches. Use weekly.",
+   "tags": "research, web",
+   "version": 1,
+   "sha256": "4e06a640a07e8330a8905c2a64f5412b0bce5365415628a875e386f79583e71c",
+   "file": "competitor-scan.md"
+  },
+  {
+   "name": "daily-briefing",
+   "description": "Compile the morning briefing: today's calendar, urgent mail, and open follow-ups. Use each weekday.",
+   "tags": "daily, personal",
+   "version": 1,
+   "sha256": "b38b33c90ba0937554309070e722740657bbac27dffeafed74272b5da536ec72",
+   "file": "daily-briefing.md"
+  },
+  {
+   "name": "dependency-audit",
+   "description": "List outdated and vulnerable project dependencies with upgrade risk notes. Use monthly or before a release.",
+   "tags": "dev, data",
+   "version": 1,
+   "sha256": "fd071550149553dcb45aa5a8703c5f5039378df74e25d57cbffd07cc9c674197",
+   "file": "dependency-audit.md"
+  },
+  {
+   "name": "email-reply-drafts",
+   "description": "Draft replies to a specific email thread in the user's voice. Use when the user asks for a reply.",
+   "tags": "email, work",
+   "version": 1,
+   "sha256": "a9f8faedd84b8cad106033c169fd9bba7aafd41e98137a6ad1ed17dd9db9bef1",
+   "file": "email-reply-drafts.md"
+  },
+  {
+   "name": "invoice-chaser",
+   "description": "Find unpaid invoices past due and draft polite payment reminders. Use weekly or when asked to chase.",
+   "tags": "work, email",
+   "version": 1,
+   "sha256": "18bf4f2a05d1db2e53010742268c7562165a7b4c6a6d07f43ce8afcd06b4ef2b",
+   "file": "invoice-chaser.md"
+  },
+  {
+   "name": "issue-triage",
+   "description": "Triage new issues in a project tracker: label, deduplicate, and ask for missing details. Use daily.",
+   "tags": "dev",
+   "version": 1,
+   "sha256": "a369b6758ef97d18b0cd859e617b23d78ceab1001f3478d0305bf6e3de7514fc",
+   "file": "issue-triage.md"
+  },
+  {
+   "name": "link-checker",
+   "description": "Check a list of URLs for broken links, redirects, and slow pages. Use before a launch or after a site change.",
+   "tags": "web, dev",
+   "version": 1,
+   "sha256": "bad7519ed2a6052ae8bb16b7430782bbe6aac43b1f91eeb9eded99d31aad89f3",
+   "file": "link-checker.md"
+  },
+  {
+   "name": "meeting-notes-to-actions",
+   "description": "Turn meeting notes or a transcript into owners, action items, and deadlines. Use after any meeting.",
+   "tags": "work",
+   "version": 1,
+   "sha256": "3d590159c4a5632de0e98f9cae23e1a1984e2b88598e1e9396c9bdda355a8dfc",
+   "file": "meeting-notes-to-actions.md"
+  },
+  {
+   "name": "news-digest",
+   "description": "Build a short digest of news on the user's chosen topics from trusted sources. Use daily or on request.",
+   "tags": "daily, research, web",
+   "version": 1,
+   "sha256": "be088c238125381644c588254fafd03f372021cdf045937a1685a4e2e69c0e81",
+   "file": "news-digest.md"
+  },
+  {
+   "name": "paper-summary",
+   "description": "Summarise a research paper with its question, method, results, and limits. Use when given a paper link or PDF.",
+   "tags": "research",
+   "version": 1,
+   "sha256": "acd843b49f458c22a38d0dc7df2e537a622d96f7f70a16b77edad15668ad3b19",
+   "file": "paper-summary.md"
+  },
+  {
+   "name": "price-watch",
+   "description": "Track product prices on given pages and report drops below the user's target. Use when asked to watch a price.",
+   "tags": "web, personal, data",
+   "version": 1,
+   "sha256": "89a3100b9f78608a889170b7dd720199e0b2b567dde87ed62cf613535a5a4c63",
+   "file": "price-watch.md"
+  },
+  {
+   "name": "receipt-sorter",
+   "description": "Sort receipts from a folder or mailbox into a dated, categorised log for expense reports. Use monthly.",
+   "tags": "personal, data",
+   "version": 1,
+   "sha256": "25de3a91efc1063b8e144a3ee06234c37eb2e6cef8abd802d43bd9ef02ebcd5d",
+   "file": "receipt-sorter.md"
+  },
+  {
+   "name": "release-notes",
+   "description": "Write release notes for a version from merged changes, grouped and checked. Use before publishing a release.",
+   "tags": "dev, work",
+   "version": 1,
+   "sha256": "60daf38df07f782931e320ac1882aa41204f84f2695d81d66469f4b3c5678034",
+   "file": "release-notes.md"
+  },
+  {
+   "name": "seo-audit",
+   "description": "Run a basic on-page SEO audit of a site's key pages and list prioritised fixes. Use before a launch.",
+   "tags": "web, work",
+   "version": 1,
+   "sha256": "eb424306e9c2c076c3f56d56bf442b46aaa53789495e0329293b3dd769247f42",
+   "file": "seo-audit.md"
+  },
+  {
+   "name": "spreadsheet-cleanup",
+   "description": "Clean a messy spreadsheet: trim spaces, fix types, dedupe, and log every change. Use on request.",
+   "tags": "data, work",
+   "version": 1,
+   "sha256": "a41cf63b6e65959e08cf258257c05c0c10049145841eec8133fad200930ffd91",
+   "file": "spreadsheet-cleanup.md"
+  },
+  {
+   "name": "study-flashcards",
+   "description": "Turn study notes or a chapter into question-and-answer flashcards with spaced review dates. Use when studying.",
+   "tags": "personal, research",
+   "version": 1,
+   "sha256": "b6164919d4444f6a124c84dbeb35c6f8e6b1b6dcd04b3b305db9c40077712f6c",
+   "file": "study-flashcards.md"
+  },
+  {
+   "name": "travel-planner",
+   "description": "Draft a trip itinerary with options, timings, and a checklist from the user's constraints. Use for trip planning.",
+   "tags": "personal, research",
+   "version": 1,
+   "sha256": "8cbbd69bab7336fbd5b48a5bcb8514f1f5481489819261f39cb1ffac349cd86a",
+   "file": "travel-planner.md"
+  },
+  {
+   "name": "web-form-filler",
+   "description": "Fill in a web form from a user-provided data file, stopping before submission. Use for repetitive forms.",
+   "tags": "web, personal",
+   "version": 1,
+   "sha256": "2924daa6fe4bbf3ad20859c3974b0273a6fdbf4275a6491f9b014818ea88a105",
+   "file": "web-form-filler.md"
+  },
+  {
+   "name": "weekly-status-report",
+   "description": "Build a weekly status report from sent mail, calendar, and workspace notes. Use on Fridays or on request.",
+   "tags": "work",
+   "version": 1,
+   "sha256": "8464da7c419381578321e6a39c4e9ac9648840853637d9afe3bca595b993d360",
+   "file": "weekly-status-report.md"
+  }
+ ]
+}

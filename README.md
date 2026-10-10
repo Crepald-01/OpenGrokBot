@@ -129,7 +129,7 @@ winget install JRSoftware.InnoSetup    # once; Inno Setup 6 is free
 python build_installer.py              # builds the app folder, then dist\OpenGrokBot-Setup-<version>.exe
 ```
 
-The installer is a normal Windows setup wizard. It installs per user (no admin prompt; all-users is available), adds Start Menu and optional desktop shortcuts, and can download Chromium during setup and start the app in the tray when you sign in. Installing a newer version over an old one keeps your Bots, memory and settings. Uninstalling removes the program and asks whether to delete your data in `%APPDATA%\OpenGrokBot`. For unattended use: `OpenGrokBot-Setup-2.1.0.exe /VERYSILENT /CURRENTUSER`, and `unins000.exe /VERYSILENT /DELETEDATA` to also remove data. The installer is unsigned, so SmartScreen may warn until you sign it with a code-signing certificate.
+The installer is a normal Windows setup wizard. It installs per user (no admin prompt; all-users is available), adds Start Menu and optional desktop shortcuts, and can download Chromium during setup and start the app in the tray when you sign in. Installing a newer version over an old one keeps your Bots, memory and settings. Uninstalling removes the program and asks whether to delete your data in `%APPDATA%\OpenGrokBot`. For unattended use: `OpenGrokBot-Setup-2.2.0.exe /VERYSILENT /CURRENTUSER`, and `unins000.exe /VERYSILENT /DELETEDATA` to also remove data. The installer is unsigned, so SmartScreen may warn until you sign it with a code-signing certificate.
 
 ## Recommended models
 

@@ -24,10 +24,10 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 <script>document.documentElement.classList.remove("no-js");</script>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"OpenGrokBot","applicationCategory":"BusinessApplication","operatingSystem":"Windows 10, Windows 11","description":"Free, open-source AI teammates (Bots) that work in a real browser on a computer of their own and ask you only when something needs your approval.","url":"https://crepald-01.github.io/OpenGrokBot/","downloadUrl":"https://github.com/Crepald-01/OpenGrokBot/releases/latest","softwareVersion":"2.1.0","license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"OpenGrokBot","applicationCategory":"BusinessApplication","operatingSystem":"Windows 10, Windows 11","description":"Free, open-source AI teammates (Bots) that work in a real browser on a computer of their own and ask you only when something needs your approval.","url":"https://crepald-01.github.io/OpenGrokBot/","downloadUrl":"https://github.com/Crepald-01/OpenGrokBot/releases/latest","softwareVersion":"2.2.0","license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}
 </script>
 </head>
 <body>
@@ -188,6 +188,7 @@
         <article class="card rv" style="--d:0.00s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pulse"/></svg></div><h3>Diagnostics<span class="tag">New in 2.0</span></h3><p>A plain-language health check with what to do about anything wrong, and a support bundle with the secrets scrubbed out.</p></article>
         <article class="card rv" style="--d:0.05s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-down"/></svg></div><h3>One-click updates<span class="tag">New in 2.0.1</span></h3><p>When a new version is out, one click downloads it, checks its SHA-256 and installs it. Your Bots and chats stay.</p></article>
         <article class="card rv" style="--d:0.10s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-spark"/></svg></div><h3>A polished UI<span class="tag">New in 2.1</span></h3><p>Clearer text, helpful empty states and motion that guides the eye, with a Reduce motion switch if you prefer stillness.</p></article>
+        <article class="card rv" style="--d:0.10s"><div class="ico"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-search"/></svg></div><h3>Skill library<span class="tag">New in 2.2</span></h3><p>Browse 20 ready-made skills, read them, and install them as drafts. Import or export your own. Checked against a SHA-256, and nothing runs until you activate it.</p></article>
       </div>
     </div>
   </section>
@@ -289,7 +290,7 @@
           <p class="meta" style="justify-content:flex-start"><span id="dlname">OpenGrokBot-Setup.exe</span></p>
         </div>
         <ul class="facts">
-          <li><span>Version</span><span data-ver-plain>2.1.0</span></li>
+          <li><span>Version</span><span data-ver-plain>2.2.0</span></li>
           <li><span>Size</span><span data-size>about 83 MB</span></li>
           <li><span>Requires</span><span>Windows 10 or 11, 64-bit</span></li>
           <li><span>Installs to</span><span>Your user folder, no admin</span></li>
@@ -306,13 +307,13 @@
 
         <div class="hash">
           <label for="sha">SHA-256 checksum</label>
-          <div class="code"><code id="sha">2d21b71c62380ee45d9f142bee4acbbfcbfbfd413aeced5cb3da641993dd8f25</code>
+          <div class="code"><code id="sha">10327239b86a11ab9546010b224e4e459f98f32571177c37f2c008c3d6c065af</code>
             <button class="btn sm" type="button" data-copy="sha"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg><span>Copy</span></button></div>
           <label for="verify" style="margin-top:18px">Verify in PowerShell</label>
-          <div class="code"><code id="verify">Get-FileHash .\OpenGrokBot-Setup-2.1.0.exe -Algorithm SHA256</code>
+          <div class="code"><code id="verify">Get-FileHash .\OpenGrokBot-Setup-2.2.0.exe -Algorithm SHA256</code>
             <button class="btn sm" type="button" data-copy="verify"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg><span>Copy</span></button></div>
           <label for="silent" style="margin-top:18px">Unattended install</label>
-          <div class="code"><code id="silent">.\OpenGrokBot-Setup-2.1.0.exe /VERYSILENT /CURRENTUSER</code>
+          <div class="code"><code id="silent">.\OpenGrokBot-Setup-2.2.0.exe /VERYSILENT /CURRENTUSER</code>
             <button class="btn sm" type="button" data-copy="silent"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg><span>Copy</span></button></div>
         </div>
 
@@ -363,6 +364,6 @@
   </div>
 </footer>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

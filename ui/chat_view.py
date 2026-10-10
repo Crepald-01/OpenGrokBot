@@ -287,6 +287,16 @@ class CommandPopup(QListWidget):
 class Composer(QPlainTextEdit):
     send = Signal()
     focusChanged = Signal(bool)
+    pastedImage = Signal(object)
+
+    def canInsertFromMimeData(self, source) -> bool:
+        return source.hasImage() or super().canInsertFromMimeData(source)
+
+    def insertFromMimeData(self, source) -> None:
+        if source.hasImage() and not source.hasText():
+            self.pastedImage.emit(source.imageData())
+            return
+        super().insertFromMimeData(source)
 
     def __init__(self):
         super().__init__()
@@ -571,6 +581,8 @@ class ChatPage(QWidget):
         row.addWidget(icon_button("paperclip", "Attach an image", self.attach), 0, Qt.AlignmentFlag.AlignBottom)
         row.setContentsMargins(10, 6, 6, 6)
         self.input = Composer()
+        self.input.pastedImage.connect(self.paste_image)
+        self.setAcceptDrops(True)
         self.input.send.connect(self.send)
         self.input.focusChanged.connect(self._focus_ring)
         self.input.textChanged.connect(lambda: self._sync_buttons())
@@ -1011,16 +1023,38 @@ class ChatPage(QWidget):
 
     def attach(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Attach an image", "", "Images (*.png *.jpg *.jpeg)")
-        if not path:
+        if path:
+            self.add_image_file(path)
+
+    def add_image_file(self, path: str) -> None:
+        if not path.lower().endswith((".png", ".jpg", ".jpeg")):
+            self.toast.emit("Only PNG and JPG images can be attached.", "warn")
             return
         with open(path, "rb") as f:
             data = f.read()
+        self.add_image_bytes(os.path.basename(path), data)
+
+    def paste_image(self, image) -> None:
+        from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+        from PySide6.QtGui import QImage
+        if not isinstance(image, QImage) or image.isNull():
+            return
+        ba = QByteArray()
+        buf = QBuffer(ba)
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buf, "PNG")
+        self.add_image_bytes(f"pasted-{time.strftime('%H%M%S')}.png", bytes(ba))
+
+    def add_image_bytes(self, name: str, data: bytes) -> None:
         if len(data) > 8 * 1024 * 1024:
             self.toast.emit("Images must be under 8 MB.", "warn")
             return
-        att = {"name": os.path.basename(path), "data": base64.b64encode(data).decode()}
+        if len(self.attachments) >= 6:
+            self.toast.emit("You can attach up to 6 images.", "warn")
+            return
+        att = {"name": name, "data": base64.b64encode(data).decode()}
         self.attachments.append(att)
-        b = button(f"{os.path.basename(path)}   ✕", flat=True)
+        b = button(f"{name}   ✕", flat=True)
         b.setStyleSheet(f"background: {theme.palette()['panel2']}; border-radius: 12px; padding: 3px 10px;")
 
         def drop(att=att, b=b) -> None:
@@ -1030,6 +1064,18 @@ class ChatPage(QWidget):
             b.deleteLater()
         b.clicked.connect(drop)
         self.attach_row.insertWidget(self.attach_row.count(), b)
+
+    def dragEnterEvent(self, e) -> None:
+        if e.mimeData().hasUrls() and any(u.isLocalFile() and u.toLocalFile().lower().endswith((".png", ".jpg", ".jpeg")) for u in e.mimeData().urls()):
+            e.acceptProposedAction()
+        else:
+            super().dragEnterEvent(e)
+
+    def dropEvent(self, e) -> None:
+        for u in e.mimeData().urls():
+            if u.isLocalFile():
+                self.add_image_file(u.toLocalFile())
+        e.acceptProposedAction()
 
     def stop(self) -> None:
         self.api.post(f"/api/threads/{self.thread_id}/stop", {})

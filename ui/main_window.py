@@ -7,7 +7,7 @@ import sys
 import time
 from typing import NamedTuple
 
-from PySide6.QtCore import QPoint, QEvent, QProcess, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QPoint, QEvent, QProcess, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
                                QMenu, QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
@@ -486,6 +486,12 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(theme.app_icon())
         self.resize(1360, 860)
         self.setMinimumSize(980, 620)
+        try:
+            g = load_ui_config().get("window_geometry")
+            if g:
+                self.restoreGeometry(QByteArray.fromBase64(g.encode("ascii")))
+        except Exception:  # noqa: BLE001
+            pass
         self.really_quit = False
         self.last_notification: dict = {}
         self.banner_shown = False
@@ -570,6 +576,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self.new_bot)
         QShortcut(QKeySequence("Ctrl+,"), self, activated=lambda: self.select("page:settings"))
         QShortcut(QKeySequence("Ctrl+/"), self, activated=self.show_shortcuts)
+        QShortcut(QKeySequence("F1"), self, activated=self.show_shortcuts)
         QShortcut(QKeySequence("Ctrl+0"), self, activated=lambda: self.select("page:home"))
         QShortcut(QKeySequence("Ctrl+J"), self, activated=self.quick_ask)
         for n in range(1, 10):
@@ -1122,6 +1129,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e: QCloseEvent) -> None:
         cfg = load_ui_config()
+        try:
+            cfg["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode("ascii")
+            save_ui_config(cfg)
+        except Exception:  # noqa: BLE001
+            pass
         if not self.really_quit and self.tray and cfg.get("close_to_tray", True):
             e.ignore()
             self.hide()

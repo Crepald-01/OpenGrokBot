@@ -113,6 +113,8 @@ def styled_list(lst: QListWidget) -> QListWidget:
     lst.setItemDelegate(RowDelegate(lst))
     lst.setUniformItemSizes(True)
     lst.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    lst.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    lst.setTextElideMode(Qt.TextElideMode.ElideRight)
     return lst
 
 

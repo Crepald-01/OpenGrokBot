@@ -81,7 +81,7 @@ class ApiTokens:
 
 # which requests each scope may make (the main access token may make any)
 ALWAYS_MAIN = ("/api/tokens", "/api/backup", "/api/channels", "/api/diagnostics/bundle")
-WRITE_MAIN = ("/api/settings", "/api/approvals", "/api/rules", "/api/providers", "/api/mcp", "/api/plugins", "/api/computer/terminal", "/api/triggers", "/api/updates")
+WRITE_MAIN = ("/api/settings", "/api/approvals", "/api/rules", "/api/providers", "/api/mcp", "/api/plugins", "/api/computer/terminal", "/api/triggers", "/api/updates", "/api/library")
 
 
 def allowed(scope: str, method: str, path: str) -> bool:

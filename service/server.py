@@ -614,6 +614,35 @@ def create_app(engine: Engine, token: str) -> FastAPI:
         ws_path(body.get("cwd") or ".")
         return eng.computer.run_command(body["command"], body.get("cwd"), int(body.get("timeout", 120)), body.get("shell", "default"), who="you")
 
+    # --------------------------------------------------------------- skill library
+    @app.get("/api/library", dependencies=[api])
+    def library_list() -> list[dict]:
+        return eng.library.entries()
+
+    @app.post("/api/library/refresh", dependencies=[api])
+    def library_refresh() -> dict:
+        return eng.library.refresh()
+
+    @app.get("/api/library/{name}", dependencies=[api])
+    def library_preview(name: str) -> dict:
+        return eng.library.preview(name)
+
+    @app.post("/api/library/{name}/install", dependencies=[api])
+    def library_install(name: str) -> dict:
+        return eng.library.install(name)
+
+    @app.post("/api/skills-import", dependencies=[api])
+    def skills_import(body: dict = Body(...)) -> list[dict]:
+        if body.get("url"):
+            return [eng.library.import_url(body["url"])]
+        if body.get("path"):
+            return eng.library.import_file(body["path"])
+        return [eng.library.import_text(body.get("raw", ""))]
+
+    @app.post("/api/skills-export", dependencies=[api])
+    def skills_export(body: dict = Body(...)) -> dict:
+        return {"count": eng.library.export_zip(body["path"], body.get("names"))}
+
     # --------------------------------------------------------------- skills
     @app.get("/api/skills", dependencies=[api])
     def skills_list() -> list[dict]:

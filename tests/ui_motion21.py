@@ -9,6 +9,8 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["OPENGROKBOT_MOTION"] = "1"
+import tempfile  # noqa: E402
+os.environ["OPENGROKBOT_HOME"] = tempfile.mkdtemp(prefix="gbtest-motion-")   # never read the real user's ui_config.json
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget  # noqa: E402

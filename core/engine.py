@@ -32,6 +32,7 @@ from .routines import Routines
 from .search import Search
 from .settings import Admin, Settings, plugin_allowed
 from .skills import Skills
+from .library import Library
 from .templates import TEAM_PRESET, template as get_template
 from .threads import Threads, fork_thread
 from .tooling import ToolSpec
@@ -69,6 +70,7 @@ class Engine:
         self.bots = Bots(self.db, self.settings, self.admin, self.events)
         self.memory = Memory(self.db)
         self.skills = Skills()
+        self.library = Library(self.skills)
         self.actions = ActionLog(self.db)
         self.usage = Usage(self.db, self.settings, self.admin)
         self.approvals = ApprovalManager(self.db, self.events, self.settings, self.admin)

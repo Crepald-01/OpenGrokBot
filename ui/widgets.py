@@ -82,6 +82,7 @@ def icon_button(name: str, tip: str = "", on: Callable | None = None, kind: str 
     b.setIcon(icons.icon(name, col, size))
     b.setIconSize(QSize(size, size))
     b.setToolTip(tip)
+    b.setAccessibleName(tip or name.replace("-", " "))
     b.setCursor(Qt.CursorShape.PointingHandCursor)
     b.setFixedSize(32, 32)
     if on:
