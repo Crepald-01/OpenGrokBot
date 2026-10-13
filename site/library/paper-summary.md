@@ -3,12 +3,12 @@ name: paper-summary
 description: Summarise a research paper with its question, method, results, and limits. Use when given a paper link or PDF.
 status: draft
 tags: research
-version: 1
+version: 2
 ---
 # Paper summary
 
 ## When to use
-The user shares a paper (arXiv link, journal page, or PDF in the workspace) and wants a summary they can use. Use the shared browser for web pages and the `pdf-viewer` tools or a text read for PDFs.
+The user shares a paper (arXiv link, journal page, or PDF in the workspace) and wants a summary they can use. Use the shared browser for web pages and for PDFs.
 
 ## Inputs
 - Paper source: URL or file path in the workspace

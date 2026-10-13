@@ -3,12 +3,12 @@ name: travel-planner
 description: Draft a trip itinerary with options, timings, and a checklist from the user's constraints. Use for trip planning.
 status: draft
 tags: personal, research
-version: 1
+version: 2
 ---
 # Travel planner
 
 ## When to use
-The user plans a trip and wants options, a day-by-day outline, and a checklist. Uses the shared browser to read public schedule and price pages, and the `calendar` connector to check the user's free dates (request access if needed).
+The user plans a trip and wants options, a day-by-day outline, and a checklist. Uses the shared browser to read public schedule and price pages, and the `google_calendar` connector to check the user's free dates (request access if needed).
 
 ## Inputs
 - Destination, dates or date range, and number of travellers

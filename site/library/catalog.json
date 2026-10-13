@@ -12,16 +12,16 @@
    "name": "competitor-scan",
    "description": "Scan competitor websites and public pages for changes in pricing, features, and launches. Use weekly.",
    "tags": "research, web",
-   "version": 1,
-   "sha256": "4e06a640a07e8330a8905c2a64f5412b0bce5365415628a875e386f79583e71c",
+   "version": 2,
+   "sha256": "19912fa539546273e9db9f20c0a871d875c49c1c2465f1a73f820ad5ae75cbaf",
    "file": "competitor-scan.md"
   },
   {
    "name": "daily-briefing",
    "description": "Compile the morning briefing: today's calendar, urgent mail, and open follow-ups. Use each weekday.",
    "tags": "daily, personal",
-   "version": 1,
-   "sha256": "b38b33c90ba0937554309070e722740657bbac27dffeafed74272b5da536ec72",
+   "version": 2,
+   "sha256": "b8387c394f8be4654685020639a6b6b1e30ae311849715ca44557d53f24fffaf",
    "file": "daily-briefing.md"
   },
   {
@@ -36,16 +36,16 @@
    "name": "email-reply-drafts",
    "description": "Draft replies to a specific email thread in the user's voice. Use when the user asks for a reply.",
    "tags": "email, work",
-   "version": 1,
-   "sha256": "a9f8faedd84b8cad106033c169fd9bba7aafd41e98137a6ad1ed17dd9db9bef1",
+   "version": 2,
+   "sha256": "e2cb1071f018a78a894cc03bec516d496bfab8402c84a71d56a43ceb7deac562",
    "file": "email-reply-drafts.md"
   },
   {
    "name": "invoice-chaser",
    "description": "Find unpaid invoices past due and draft polite payment reminders. Use weekly or when asked to chase.",
    "tags": "work, email",
-   "version": 1,
-   "sha256": "18bf4f2a05d1db2e53010742268c7562165a7b4c6a6d07f43ce8afcd06b4ef2b",
+   "version": 2,
+   "sha256": "4331a173b4769f867f5aeb3b6d362d1fd443d683f50d128077b76c99cee5545c",
    "file": "invoice-chaser.md"
   },
   {
@@ -68,8 +68,8 @@
    "name": "meeting-notes-to-actions",
    "description": "Turn meeting notes or a transcript into owners, action items, and deadlines. Use after any meeting.",
    "tags": "work",
-   "version": 1,
-   "sha256": "3d590159c4a5632de0e98f9cae23e1a1984e2b88598e1e9396c9bdda355a8dfc",
+   "version": 2,
+   "sha256": "c9a51d6a8e0578088f7af500a9e35914c60ec0ca5fa7a64f094304905b4b9ffa",
    "file": "meeting-notes-to-actions.md"
   },
   {
@@ -84,8 +84,8 @@
    "name": "paper-summary",
    "description": "Summarise a research paper with its question, method, results, and limits. Use when given a paper link or PDF.",
    "tags": "research",
-   "version": 1,
-   "sha256": "acd843b49f458c22a38d0dc7df2e537a622d96f7f70a16b77edad15668ad3b19",
+   "version": 2,
+   "sha256": "57dffdfc80dc2bd888adafefbef508e3589d14404f59f4801c7d13343900aa13",
    "file": "paper-summary.md"
   },
   {
@@ -100,8 +100,8 @@
    "name": "receipt-sorter",
    "description": "Sort receipts from a folder or mailbox into a dated, categorised log for expense reports. Use monthly.",
    "tags": "personal, data",
-   "version": 1,
-   "sha256": "25de3a91efc1063b8e144a3ee06234c37eb2e6cef8abd802d43bd9ef02ebcd5d",
+   "version": 2,
+   "sha256": "0979c5fd8c73675f12d8df765d98e41c2377460f059f760498cb368315cf598e",
    "file": "receipt-sorter.md"
   },
   {
@@ -124,8 +124,8 @@
    "name": "spreadsheet-cleanup",
    "description": "Clean a messy spreadsheet: trim spaces, fix types, dedupe, and log every change. Use on request.",
    "tags": "data, work",
-   "version": 1,
-   "sha256": "a41cf63b6e65959e08cf258257c05c0c10049145841eec8133fad200930ffd91",
+   "version": 2,
+   "sha256": "c9b83536664a25798408e8d717e230d6f15623cbfb1e2ab74598aecef3c1d150",
    "file": "spreadsheet-cleanup.md"
   },
   {
@@ -140,8 +140,8 @@
    "name": "travel-planner",
    "description": "Draft a trip itinerary with options, timings, and a checklist from the user's constraints. Use for trip planning.",
    "tags": "personal, research",
-   "version": 1,
-   "sha256": "8cbbd69bab7336fbd5b48a5bcb8514f1f5481489819261f39cb1ffac349cd86a",
+   "version": 2,
+   "sha256": "790e3613071c72edce90bc4f6d348a596c2d587777c2fd0b8fe1dead8b320347",
    "file": "travel-planner.md"
   },
   {
@@ -156,8 +156,8 @@
    "name": "weekly-status-report",
    "description": "Build a weekly status report from sent mail, calendar, and workspace notes. Use on Fridays or on request.",
    "tags": "work",
-   "version": 1,
-   "sha256": "8464da7c419381578321e6a39c4e9ac9648840853637d9afe3bca595b993d360",
+   "version": 2,
+   "sha256": "66d8a85b52a721bf571be56e8eb906f9e328a897ccac9719909d808e537a663b",
    "file": "weekly-status-report.md"
   }
  ]

@@ -74,7 +74,11 @@ For a team: tell the **Chief of Staff** *"Triage my inbox daily, track receipts,
 
 ## Skill library
 
-Skills page > **Library…** lists ready-made skills. Pick one to read it, then **Install as draft**. Read it, edit it, and only then activate it. "Check for new skills" looks for updates online (and only when you click). You can also import a `.md`/`.zip` file or an https link; only import skills from people you trust, because a skill is a set of instructions your Bot will follow. Approvals still apply to everything a skill makes a Bot do.
+Skills page > **Library…** lists ready-made skills. Pick one to read it, then **Install as draft**. Read it, edit it, and only then activate it. "Check for new skills" looks for updates online (and only when you click). You can also import a `.md`/`.zip` file or an https link; only import skills from people you trust, because a skill is a set of instructions your Bot will follow. Approvals still apply to everything a skill makes a Bot do. **Install all shown** adds every new skill in the list as drafts after one confirmation.
+
+## Notifications
+
+Inbox > **Notifications** lists everything your Bots told you, with unread items in bold. Filter by Bot, **Mark all read**, or double-click one to open the conversation.
 
 ## Writing skills
 

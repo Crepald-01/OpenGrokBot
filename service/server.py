@@ -869,6 +869,10 @@ def create_app(engine: Engine, token: str) -> FastAPI:
         eng.notify("test", None, None, "OpenGrokBot test", "Notifications are working.", urgent=True)
         return {"ok": True}
 
+    @app.get("/api/notifications/unread", dependencies=[api])
+    def notifications_unread() -> dict:
+        return {"count": int(eng.db.scalar("SELECT COUNT(*) FROM notifications WHERE read=0", (), 0))}
+
     @app.post("/api/notifications/read", dependencies=[api])
     def notifications_read() -> dict:
         eng.db.execute("UPDATE notifications SET read=1")

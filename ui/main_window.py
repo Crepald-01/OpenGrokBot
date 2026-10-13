@@ -64,6 +64,7 @@ class SideRow(QFrame):
         self.bar.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         h.addSpacing(4)
         h.addWidget(self.bar, 0, Qt.AlignmentFlag.AlignVCenter)
+        motion.hover_bar(self, self.bar, 16)
         h.addSpacing(3)
         self.leading = leading
         if leading is not None:

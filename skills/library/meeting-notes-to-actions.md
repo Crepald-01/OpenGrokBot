@@ -3,15 +3,15 @@ name: meeting-notes-to-actions
 description: Turn meeting notes or a transcript into owners, action items, and deadlines. Use after any meeting.
 status: draft
 tags: work
-version: 1
+version: 2
 ---
 # Meeting notes to actions
 
 ## When to use
-After a meeting when the user shares notes, a transcript, or a recording link and asks for the follow-ups. Use the shared files workspace for the source; use the `calendar` connector (via `request_access` if missing) to confirm attendees and the meeting date.
+After a meeting when the user shares notes, a transcript, or a recording link and asks for the follow-ups. Use the shared files workspace for the source; use the `google_calendar` connector (via `request_access` if missing) to confirm attendees and the meeting date.
 
 ## Inputs
-- The notes or transcript (file in the workspace, pasted text, or a Drive document)
+- The notes or transcript (file in the workspace, or pasted text)
 - Attendee list (calendar event, or ask the user)
 - Preferred output location (default: a new file in the workspace)
 

@@ -3,12 +3,12 @@ name: weekly-status-report
 description: Build a weekly status report from sent mail, calendar, and workspace notes. Use on Fridays or on request.
 status: draft
 tags: work
-version: 1
+version: 2
 ---
 # Weekly status report
 
 ## When to use
-End of week, or when the user asks for a status update for their manager or team. Pulls evidence from the `calendar` and `gmail` connectors (request access if they are not connected) and from files the user saved in the workspace during the week.
+End of week, or when the user asks for a status update for their manager or team. Pulls evidence from the `google_calendar` and `gmail` connectors (request access if they are not connected) and from files the user saved in the workspace during the week.
 
 ## Inputs
 - Reporting window (default: Monday to today)

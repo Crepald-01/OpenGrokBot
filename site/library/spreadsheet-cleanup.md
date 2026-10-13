@@ -3,15 +3,15 @@ name: spreadsheet-cleanup
 description: Clean a messy spreadsheet: trim spaces, fix types, dedupe, and log every change. Use on request.
 status: draft
 tags: data, work
-version: 1
+version: 2
 ---
 # Spreadsheet cleanup
 
 ## When to use
-The user shares a CSV or spreadsheet with duplicates, mixed date formats, stray spaces, or inconsistent category names and asks for it to be cleaned. Works on files in the workspace or a Drive sheet through the `drive` connector (request access if needed).
+The user shares a CSV or spreadsheet with duplicates, mixed date formats, stray spaces, or inconsistent category names and asks for it to be cleaned. Works on files in the workspace.
 
 ## Inputs
-- Source file path or Drive file
+- Source file path in the workspace
 - Columns the user cares about and any rules they gave (for example, "treat 'UK' and 'United Kingdom' as the same")
 - Output location (default: a new file, original kept)
 
@@ -30,7 +30,7 @@ The user shares a CSV or spreadsheet with duplicates, mixed date formats, stray 
 - Every removed or changed row appears in the change log.
 
 ## Needs approval
-Overwriting the original file, deleting rows that are near-duplicates, or writing back to a shared Drive sheet.
+Overwriting the original file, deleting rows that are near-duplicates.
 
 ## Edge cases
 - Ambiguous dates such as 03/04/2025: flag, do not convert.

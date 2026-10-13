@@ -307,6 +307,48 @@ def glow(button: QPushButton, color: str) -> None:
         _Glow(button, color)
 
 
+class _HoverBar(QObject):
+    """The small bar at a sidebar row's left edge grows from a dot to full height while the pointer is on the row."""
+
+    def __init__(self, row: QWidget, bar: QWidget, full: int):
+        super().__init__(row)
+        self.row, self.bar, self.full = row, bar, full
+        self.anim = QVariantAnimation(self)
+        self.anim.setDuration(150)
+        self.anim.setEasingCurve(QEasingCurve(OUT))
+        self.anim.valueChanged.connect(lambda v: bar.setFixedHeight(int(v)))
+        row.installEventFilter(self)
+
+    def _to(self, hover: bool) -> None:
+        if self.row.property("checked"):
+            hover = False
+        self.bar.setProperty("hover", bool(hover) and not self.bar.property("on"))
+        self.bar.style().unpolish(self.bar)
+        self.bar.style().polish(self.bar)
+        self.anim.stop()
+        if hover:
+            self.bar.setFixedHeight(4)
+            self.anim.setStartValue(4)
+            self.anim.setEndValue(self.full)
+            self.anim.start()
+        else:
+            self.bar.setFixedHeight(self.full)
+
+    def eventFilter(self, o, e) -> bool:
+        t = e.type()
+        if t == QEvent.Type.Enter:
+            self._to(True)
+        elif t in (QEvent.Type.Leave, QEvent.Type.Hide):
+            self._to(False)
+        return False
+
+
+def hover_bar(row: QWidget, bar: QWidget, full: int = 16) -> None:
+    """Give a sidebar row the growing hover bar. Skipped when motion is off."""
+    if enabled():
+        _HoverBar(row, bar, full)
+
+
 # ------------------------------------------------------------------------------------------------------------ toasts and dialogs
 def toast_in(lb: QWidget) -> None:
     """A toast slides up a little as it fades in."""

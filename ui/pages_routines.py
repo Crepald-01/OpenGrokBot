@@ -210,7 +210,7 @@ class RoutinesPage(QWidget):
         lv.setContentsMargins(0, theme.dp(16), 0, 0)
         lv.setSpacing(theme.dp(10))
         lv.addLayout(heading("Run history", "Newest first. Select a run to read its result, double-click to open its thread."))
-        self.runs = make_table(["Started", "Routine", "Status", "Took", "Result"], 4)
+        self.runs = make_table(["Started", "Routine", "Status", "Took", "Tokens", "Result"], 5)
         self.runs.itemSelectionChanged.connect(self.show_result)
         self.runs.cellDoubleClicked.connect(lambda r, c: self.open_run(r))
         self.runs_empty = EmptyState("history", "No runs yet", "Each run is listed here with its result. Select a routine and press Run now to try it.")
@@ -261,7 +261,8 @@ class RoutinesPage(QWidget):
             self.runs.setRowCount(0)
             for r in rows:
                 took = f"{int(r['ended_at'] - r['started_at'])}s" if r.get("ended_at") else "…"
-                fill_row(self.runs, [fmt_time(r["started_at"]), r["routine_name"] or "", r["status"], took, (r["result"] or r["error"] or "")[:200]], r)
+                tok = int(r.get("tokens") or 0)
+                fill_row(self.runs, [fmt_time(r["started_at"]), r["routine_name"] or "", r["status"], took, f"{tok:,}" if tok else "", (r["result"] or r["error"] or "")[:200]], r)
             self.runs.resizeRowsToContents()
             set_empty(self.runs, self.runs_empty)
         self.api.get("/api/routine_runs", ok, params={"routine_id": s["id"]} if s else {})

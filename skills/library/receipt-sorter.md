@@ -3,7 +3,7 @@ name: receipt-sorter
 description: Sort receipts from a folder or mailbox into a dated, categorised log for expense reports. Use monthly.
 status: draft
 tags: personal, data
-version: 1
+version: 2
 ---
 # Receipt sorter
 
@@ -11,7 +11,7 @@ version: 1
 The user has receipts as files or emailed invoices and wants them logged by date and category, for an expense report or tax file. Uses the workspace folder and the `gmail` connector for emailed receipts (request access if needed).
 
 ## Inputs
-- Receipt folder in the workspace or Drive
+- Receipt folder in the workspace
 - Date range and category list from `memory_search` or the user
 - Output log file (default: `receipts-<YYYY-MM>.csv`)
 

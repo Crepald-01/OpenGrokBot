@@ -479,3 +479,46 @@ class ApprovalCard(QFrame):
         t = self.answer.text().strip()
         if t:
             self.decided.emit(self.a["id"], {"approve": True, "answer": t})
+
+
+class Skeleton(QWidget):
+    """Grey placeholder rows shown while a list is loading. Pulses gently; static when motion is off."""
+
+    def __init__(self, rows: int = 5, parent=None):
+        super().__init__(parent)
+        self.rows = rows
+        self._phase = 0.0
+        self._timer = QTimer(self)
+        self._timer.setInterval(60)
+        self._timer.timeout.connect(self._tick)
+        self.setMinimumHeight(theme.dp(54) * rows)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 0.08) % 2.0
+        self.update()
+
+    def showEvent(self, e) -> None:
+        super().showEvent(e)
+        if motion.enabled():
+            self._timer.start()
+
+    def hideEvent(self, e) -> None:
+        super().hideEvent(e)
+        self._timer.stop()
+
+    def paintEvent(self, e) -> None:
+        from PySide6.QtGui import QColor, QPainter
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        col = QColor(theme.palette()["line2"])
+        k = abs(self._phase - 1.0)            # 0..1..0
+        col.setAlphaF(0.45 + 0.4 * k if self._timer.isActive() else 0.6)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(col)
+        row_h = theme.dp(54)
+        for i in range(self.rows):
+            y = i * row_h + theme.dp(10)
+            w = self.width()
+            p.drawRoundedRect(theme.dp(8), y, int(w * 0.38), theme.dp(12), 6, 6)
+            p.drawRoundedRect(theme.dp(8), y + theme.dp(20), int(w * (0.62 - 0.05 * (i % 3))), theme.dp(10), 5, 5)

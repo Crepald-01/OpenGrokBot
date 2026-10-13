@@ -76,6 +76,10 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 <td width="50%"><img src="docs/screenshots/workflows.png" alt="A workflow and its run history"><br><sub><b>Workflows.</b> A pipeline of Bots, with every step's result.</sub></td>
 </tr>
 <tr>
+<td width="50%"><img src="docs/screenshots/skill-library.png" alt="The skill library"><br><sub><b>Skill library.</b> Ready-made skills: read them, install as drafts.</sub></td>
+<td width="50%"><img src="docs/screenshots/notifications.png" alt="Inbox notification history"><br><sub><b>Notifications.</b> Everything your Bots told you, unread in bold.</sub></td>
+</tr>
+<tr>
 <td width="50%"><img src="docs/screenshots/insights.png" alt="Insights: tasks per day, busiest hours, Bots and tools"><br><sub><b>Insights.</b> How your Bots are doing over time.</sub></td>
 <td width="50%"><img src="docs/screenshots/diagnostics.png" alt="Diagnostics health checks"><br><sub><b>Diagnostics.</b> A plain-language health check.</sub></td>
 </tr>

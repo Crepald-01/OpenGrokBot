@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-                               QPlainTextEdit, QSplitter, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import theme
 from .api import Api
 from .pages_files import set_row, styled_list
-from .widgets import button, label
+from .widgets import Skeleton, button, label
 
 STATE = {"available": ("new", "muted"), "installed": ("installed", "ok"), "update": ("update", "warn")}
 
@@ -42,7 +42,11 @@ class LibraryDialog(QDialog):
         v.addWidget(split, 1)
         self.list = styled_list(QListWidget())
         self.list.currentRowChanged.connect(self._pick)
-        split.addWidget(self.list)
+        self.left = QStackedWidget()          # a loading placeholder first, the list once the skills arrive
+        self.left.addWidget(Skeleton(6))
+        self.left.addWidget(self.list)
+        self.left.setCurrentWidget(self.list)
+        split.addWidget(self.left)
         right = QWidget()
         rv = QVBoxLayout(right)
         rv.setContentsMargins(8, 0, 0, 0)
@@ -61,6 +65,10 @@ class LibraryDialog(QDialog):
         self.btn_install = button("Install as draft", primary=True, on=self.install)
         self.btn_install.setEnabled(False)
         row.addWidget(self.btn_install)
+        self.btn_all = button("Install all shown", on=self.install_all)
+        self.btn_all.setToolTip("Adds every skill in the list that you do not have yet, each as a draft. Nothing is activated.")
+        self.btn_all.setEnabled(False)
+        row.addWidget(self.btn_all)
         row.addWidget(button("Import file…", on=self.import_file))
         row.addWidget(button("Import link…", on=self.import_url))
         row.addWidget(button("Export mine…", on=self.export))
@@ -72,7 +80,11 @@ class LibraryDialog(QDialog):
         self.load()
 
     def load(self) -> None:
+        if not self.rows:
+            self.left.setCurrentIndex(0)
+
         def ok(rows: list) -> None:
+            self.left.setCurrentWidget(self.list)
             self.rows = rows
             tags = sorted({t.strip() for r in rows for t in r.get("tags", "").split(",") if t.strip()})
             cur = self.tag.currentData()
@@ -85,12 +97,13 @@ class LibraryDialog(QDialog):
             self.tag.setCurrentIndex(max(i, 0))
             self.tag.blockSignals(False)
             self.render()
-        self.api.get("/api/library", ok)
+        self.api.get("/api/library", ok, lambda e: (self.left.setCurrentWidget(self.list), self.msg.setText(e)))
 
     def render(self) -> None:
         q, tag = self.search.text().strip().lower(), self.tag.currentData() or ""
         self.list.blockSignals(True)
         self.list.clear()
+        self.shown_new: list[str] = []
         for r in self.rows:
             hay = f"{r['name']} {r['description']} {r['tags']}".lower()
             if q and q not in hay:
@@ -102,6 +115,10 @@ class LibraryDialog(QDialog):
             set_row(it, r["name"], r["description"] or "No description.", "skills", "accent" if r["state"] != "available" else "muted", st)
             it.setData(Qt.ItemDataRole.UserRole, r["name"])
             self.list.addItem(it)
+            if r["state"] == "available":
+                self.shown_new.append(r["name"])
+        self.btn_all.setEnabled(bool(self.shown_new))
+        self.btn_all.setText(f"Install all shown ({len(self.shown_new)})" if self.shown_new else "Install all shown")
         self.list.blockSignals(False)
         if self.list.count():
             self.list.setCurrentRow(0)
@@ -138,6 +155,36 @@ class LibraryDialog(QDialog):
             return
         self.api.post(f"/api/library/{self.current}/install", {}, lambda s: (self.msg.setText(f"Installed {s['name']} as a draft."), self.installed.emit(s["name"]), self.load()),
                       lambda e: self.msg.setText(e))
+
+    def install_all(self) -> None:
+        names = list(self.shown_new)
+        if not names:
+            return
+        if QMessageBox.question(self, "Install all shown?", f"Add {len(names)} skill{'s' if len(names) != 1 else ''} as drafts. Nothing is activated: "
+                                "you read each one and switch it on yourself.") != QMessageBox.StandardButton.Yes:
+            return
+        self.btn_all.setEnabled(False)
+        done = {"n": 0, "failed": 0}
+
+        def step() -> None:
+            if not names:
+                self.msg.setText(f"Installed {done['n']} as drafts." + (f" {done['failed']} failed." if done["failed"] else ""))
+                if done["n"]:
+                    self.installed.emit("")
+                self.load()
+                return
+            n = names.pop(0)
+            self.msg.setText(f"Installing {n}…")
+
+            def good(_s) -> None:
+                done["n"] += 1
+                step()
+
+            def bad(_e) -> None:
+                done["failed"] += 1
+                step()
+            self.api.post(f"/api/library/{n}/install", {}, good, bad)
+        step()
 
     def refresh(self) -> None:
         self.btn_refresh.setEnabled(False)

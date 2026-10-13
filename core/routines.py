@@ -154,7 +154,9 @@ class Routines:
         if bot_id:
             where.append("rr.bot_id=?")
             params.append(bot_id)
-        sql = ("SELECT rr.*, r.name AS routine_name, b.name AS bot_name FROM routine_runs rr LEFT JOIN routines r ON r.id=rr.routine_id "
+        sql = ("SELECT rr.*, r.name AS routine_name, b.name AS bot_name, "
+               "(SELECT COALESCE(SUM(u.input_tokens+u.output_tokens),0) FROM usage u WHERE u.turn_id<>'' AND u.turn_id=rr.turn_id) AS tokens "
+               "FROM routine_runs rr LEFT JOIN routines r ON r.id=rr.routine_id "
                "LEFT JOIN bots b ON b.id=rr.bot_id" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY rr.started_at DESC LIMIT ?")
         return self.db.query(sql, [*params, limit])
 

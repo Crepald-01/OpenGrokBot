@@ -288,6 +288,10 @@ QSplitter::handle:horizontal {{ width: 1px; }}
 QSplitter::handle:vertical {{ height: 1px; }}
 QProgressBar {{ background: {c['panel2']}; border: none; border-radius: 4px; max-height: 8px; min-height: 8px; text-align: center; color: transparent; }}
 QProgressBar::chunk {{ background: {c['accent']}; border-radius: 4px; }}
+QProgressBar[budget] {{ max-height: 4px; min-height: 4px; border-radius: 2px; }}
+QProgressBar[budget]::chunk {{ border-radius: 2px; }}
+QProgressBar[budget="warn"]::chunk {{ background: {c['warn']}; }}
+QProgressBar[budget="over"]::chunk {{ background: #e47c7c; }}
 QMenu {{ background: {c['raised']}; border: 1px solid {c['line2']}; border-radius: 12px; padding: 6px; }}
 QMenu::item {{ padding: 8px 20px 8px 14px; border-radius: 8px; }}
 QMenu::item:selected {{ background: {c['accent_dim']}; }}
@@ -306,6 +310,7 @@ QLabel#siderowtitle {{ color: {c['text']}; }}
 QFrame[siderow="true"][checked="true"] QLabel#siderowtitle {{ font-weight: 600; }}
 QFrame[navbar="true"] {{ background: transparent; border: none; border-radius: 2px; }}
 QFrame[navbar="true"][on="true"] {{ background: {c['accent']}; }}
+QFrame[navbar="true"][hover="true"] {{ background: {c['faint']}; }}
 QFrame[swatch="true"] {{ border-radius: 13px; border: 2px solid transparent; }}
 QFrame[swatch="true"][on="true"] {{ border: 2px solid {c['text']}; }}
 QLabel[kbd="true"] {{ background: {c['panel2']}; color: {c['muted']}; border: 1px solid {c['line2']}; border-radius: 5px; padding: 1px 6px; font-size: {tiny}px; }}

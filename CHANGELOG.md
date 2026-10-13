@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.0 (unreleased)
+
+Trust and polish: finish the loose ends from 2.2.
+
+- **Notification history.** Inbox has a new Notifications tab: everything your Bots told you, newest first, unread in bold, filter by Bot, Mark all read, double-click to open the conversation. The tab shows the unread count.
+- **Budget bar.** A Bot with a daily token budget shows a thin bar on its Home card that turns amber at 80% and red when the budget is used up.
+- **Tokens per run.** Routine run history has a Tokens column, so you can see what each run used.
+- **Install all shown.** The skill library can install every new skill in the current list in one go (still as drafts, after one confirmation).
+- **Loading placeholders.** The library shows grey placeholder rows while it loads instead of a blank list.
+- **Sidebar hover.** The marker at the left of a sidebar row grows from a dot when you point at it (off with Reduce motion).
+- **Library skills corrected.** Ten skills named tools and connectors OpenGrokBot does not have (a Drive connector, `create_draft`, `calendar`, `preview_start`, `pdf-viewer`). They now use the real ones (`gmail_create_draft`, `google_calendar`) or the workspace; they are version 2, so installed copies show "update".
+- **Faster tests.** `python scripts/run_tests.py` runs the unit test files in parallel (about 26 s instead of about 75 s); `--ui` adds the UI scripts.
+- Removed a stray 194 MB copy of the project folder from the working tree.
+
 ## 2.2.0
 
 Downloadable skills, and a few small things.

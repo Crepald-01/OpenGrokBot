@@ -3,7 +3,7 @@ name: email-reply-drafts
 description: Draft replies to a specific email thread in the user's voice. Use when the user asks for a reply.
 status: draft
 tags: email, work
-version: 1
+version: 2
 ---
 # Email reply drafts
 
@@ -21,7 +21,7 @@ The user names a thread or sender and asks for a reply, or asks for drafts for a
 3. Check `memory_search` for the user's voice notes and for any standing rules about this contact.
 4. If no voice notes exist, ask the user for two recent sent emails and save the tone summary to memory.
 5. Write the draft: answer first, then the supporting detail, then one clear next step.
-6. Create the draft in the user's mailbox with `create_draft`, addressed to the correct recipients (keep the thread reply-all setting the user had).
+6. Create the draft in the user's mailbox with `gmail_create_draft`, addressed to the correct recipients (keep the thread reply-all setting the user had).
 7. Report the draft link or subject, and list any facts in the draft that came from the thread so the user can check them.
 8. If a reply is expected from the other side by a date, call `followup_schedule` for 3 days later.
 

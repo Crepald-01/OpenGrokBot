@@ -115,14 +115,33 @@ class InboxPage(QWidget):
         hv.addWidget(self.handoffs)
         self.tabs.addTab(hw, "Handoffs")
 
+        nw = QWidget()
+        nv = QVBoxLayout(nw)
+        nbar = QHBoxLayout()
+        self.n_bot = QComboBox()
+        self.n_bot.addItem("All Bots", "")
+        self.n_bot.currentIndexChanged.connect(lambda _: self.reload())
+        nbar.addWidget(self.n_bot)
+        nbar.addStretch(1)
+        self.n_count = label("", muted=True)
+        nbar.addWidget(self.n_count)
+        nbar.addWidget(button("Mark all read", on=self._read_all))
+        nv.addLayout(nbar)
+        self.notes = make_table(["When", "Bot", "What", "Details"], 3)
+        self.notes.cellDoubleClicked.connect(lambda r, c: self._open_note(r))
+        nv.addWidget(self.notes)
+        self.tabs.addTab(nw, "Notifications")
+
         store.approvalsChanged.connect(self.render_pending)
         store.event.connect(self._event)
+        store.notification.connect(lambda _n: self.isVisible() and self.reload())
         self.tabs.currentChanged.connect(lambda _: self.reload())
 
     def showEvent(self, e) -> None:
         super().showEvent(e)
         self.render_pending()
         self.reload()
+        self.api.get("/api/notifications/unread", lambda d: self.tabs.setTabText(3, f"Notifications ({d['count']})" if d.get("count") else "Notifications"))
 
     def _event(self, ev: dict) -> None:
         if ev.get("type") in ("approval", "handoffs") and self.isVisible():
@@ -174,6 +193,27 @@ class InboxPage(QWidget):
                                             a["status"].replace("_", " "), a["decided_by"] or "", a["reason"] or ""], a)
                 self.history.resizeRowsToContents()
             self.api.get("/api/approvals", ok, params={"status": "all", "limit": 150})
+        elif i == 3:
+            self._fill_bots()
+
+            def ok3(rows: list) -> None:
+                want = self.n_bot.currentData() or ""
+                self.notes.setRowCount(0)
+                unread = 0
+                for n in rows:
+                    if want and n.get("bot_id") != want:
+                        continue
+                    r = fill_row(self.notes, [fmt_time(n["ts"]), n.get("bot_name") or "", n["title"], (n.get("body") or "")[:200]], n)
+                    if not n.get("read"):
+                        unread += 1
+                        for c in range(self.notes.columnCount()):
+                            it = self.notes.item(r, c)
+                            f = it.font()
+                            f.setBold(True)
+                            it.setFont(f)
+                self.notes.resizeRowsToContents()
+                self.n_count.setText(f"{unread} unread" if unread else "All read")
+            self.api.get("/api/notifications", ok3, params={"limit": 200})
         elif i == 2:
             def ok2(rows: list) -> None:
                 self.handoffs.setRowCount(0)
@@ -181,6 +221,27 @@ class InboxPage(QWidget):
                     fill_row(self.handoffs, [h["title"], f"{h['from_name']} → {h['to_name']}", h["status"], fmt_time(h["updated_at"]), h["result"][:200]], h)
                 self.handoffs.resizeRowsToContents()
             self.api.get("/api/handoffs", ok2, params={"status": "all"})
+
+    def _fill_bots(self) -> None:
+        have = {self.n_bot.itemData(i) for i in range(self.n_bot.count())}
+        want = {b["id"] for b in self.store.bots}
+        if have - {""} != want:
+            cur = self.n_bot.currentData()
+            self.n_bot.blockSignals(True)
+            self.n_bot.clear()
+            self.n_bot.addItem("All Bots", "")
+            for b in self.store.bots:
+                self.n_bot.addItem(f"{b['emoji']} {b['name']}", b["id"])
+            self.n_bot.setCurrentIndex(max(self.n_bot.findData(cur), 0))
+            self.n_bot.blockSignals(False)
+
+    def _open_note(self, row: int) -> None:
+        n = self.notes.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        if n and n.get("thread_id"):
+            self.openThread.emit(n["thread_id"], n.get("bot_id", ""))
+
+    def _read_all(self) -> None:
+        self.api.post("/api/notifications/read", {}, lambda _: self.reload())
 
     def _open_hist(self, row: int) -> None:
         a = self.history.item(row, 0).data(Qt.ItemDataRole.UserRole)

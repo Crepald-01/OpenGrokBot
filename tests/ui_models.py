@@ -97,4 +97,5 @@ if "gpt-a" not in got or ed.picker.text() != "gpt-b":
     fails.append("bot editor dropdown wrong")
 print("FAIL: " + "; ".join(fails) if fails else "ALL OK")
 eng.stop()
+sys.stdout.flush()
 os._exit(1 if fails else 0)

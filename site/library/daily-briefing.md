@@ -3,12 +3,12 @@ name: daily-briefing
 description: Compile the morning briefing: today's calendar, urgent mail, and open follow-ups. Use each weekday.
 status: draft
 tags: daily, personal
-version: 1
+version: 2
 ---
 # Daily briefing
 
 ## When to use
-Each weekday morning, or when the user asks "what's my day". Uses the `calendar` and `gmail` connectors (request access if needed), the shared browser for any pages the user watches, and `followup_schedule` for pending items.
+Each weekday morning, or when the user asks "what's my day". Uses the `google_calendar` and `gmail` connectors (request access if needed), the shared browser for any pages the user watches, and `followup_schedule` for pending items.
 
 ## Inputs
 - User's time zone and working hours (from `memory_search`)
