@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.3.0 (unreleased)
+## 2.3.0
 
 Trust and polish: finish the loose ends from 2.2.
 

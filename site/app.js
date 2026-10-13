@@ -6,9 +6,9 @@
 const CONFIG = {
   REPO: "Crepald-01/OpenGrokBot",
   // Fallbacks shown until (or if) the release lookup works. Update these when you publish a new build.
-  version: "2.2.0",
+  version: "2.3.0",
   sizeMB: 83,
-  sha256: "10327239b86a11ab9546010b224e4e459f98f32571177c37f2c008c3d6c065af",
+  sha256: "05b738bacbebf63ac9fd2765f9931174c77832b6fe8756027779fcd458e70195",
 };
 // ----------------------------------------------------------------------------------------------------------
 
