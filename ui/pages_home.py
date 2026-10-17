@@ -1,6 +1,7 @@
 """Home: one glance at the whole team. What needs you, who is working, how much of the week is used, what just happened."""
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
 import re
@@ -230,6 +231,13 @@ class HomePage(QWidget):
         dl.addWidget(self.digest_text, 1)
         dl.addWidget(button("Full digest", on=lambda: DigestDialog(self.api, self).exec()), 0, Qt.AlignmentFlag.AlignVCenter)
         left.addWidget(self.digest_card)
+        left.addSpacing(8)
+        left.addWidget(label("COMING UP", eyebrow=True))
+        self.coming_card = card()
+        self.coming = QVBoxLayout(self.coming_card)
+        self.coming.setContentsMargins(18, 10, 18, 10)
+        self.coming.setSpacing(0)
+        left.addWidget(self.coming_card)
         left.addStretch(1)
         cols.addLayout(left, 3)
         right = QVBoxLayout()
@@ -290,6 +298,7 @@ class HomePage(QWidget):
             self.digest_text.setText(d["headline"])
 
         self.api.get("/api/digest", digest, lambda _e: None, params={"spec": "today"})
+        self.api.get("/api/upcoming", self.render_coming, lambda _e: None)
         self.api.get("/api/usage", usage)
         self.api.get("/api/actions", feed, params={"limit": 8})
         self.render()
@@ -458,6 +467,45 @@ class HomePage(QWidget):
         row.addStretch(1)
         v.addLayout(row)
         return c
+
+    def render_coming(self, d: dict) -> None:
+        """Routines and scheduled workflows due soon, and a one-line state for triggers. Each row opens Automations."""
+        p = theme.palette()
+        clear_layout(self.coming)
+        rows = []
+        for it in d.get("items", []):
+            when = time.strftime("%H:%M", time.localtime(it["at"])) if it["at"] - time.time() < 20 * 3600 else time.strftime("%a %H:%M", time.localtime(it["at"]))
+            rows.append((when, it["name"], ("Routine" if it["kind"] == "routine" else "Workflow") + (f" · {it['bot']}" if it.get("bot") else "")))
+        if d.get("more"):
+            rows.append(("", f"and {d['more']} more in the next day", ""))
+        t = d.get("triggers") or {}
+        if t.get("total"):
+            if t.get("paused"):
+                rows.append(("", "All triggers are paused", "Resume them in Automations"))
+            else:
+                rows.append(("", f"{t['watching']} trigger{'s' if t['watching'] != 1 else ''} watching" + (f", {t['problems']} with a problem" if t.get("problems") else ""), "Page, feed, email, calendar, folder, webhook"))
+        if not rows:
+            tx = label("Nothing scheduled. Routines and triggers you set up in Automations show up here.", muted=True)
+            tx.setContentsMargins(0, theme.dp(8), 0, theme.dp(8))
+            self.coming.addWidget(tx)
+            return
+        for when, name, sub_ in rows:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, theme.dp(7), 0, theme.dp(7))
+            row.setSpacing(12)
+            w = label(when, muted=True, wrap=False)
+            w.setMinimumWidth(theme.dp(72))
+            row.addWidget(w)
+            col = QVBoxLayout()
+            col.setSpacing(0)
+            col.addWidget(label(name, wrap=False))
+            if sub_:
+                s2 = label(sub_, muted=True, wrap=False)
+                s2.setStyleSheet(f"font-size: {theme.base_size() - 1}px;")
+                col.addWidget(s2)
+            row.addLayout(col, 1)
+            self.coming.addLayout(row)
+        del p
 
     def render_feed(self) -> None:
         p = theme.palette()

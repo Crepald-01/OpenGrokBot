@@ -107,6 +107,22 @@ class Computer:
             fh.write(content)
         return f
 
+    def write_bytes(self, path: str, data: bytes, who: str = "") -> Path:
+        f, _ = self.resolve(path)
+        if self.history is not None and f.is_file():
+            self.history.snapshot(f, "overwritten", who)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(data)
+        return f
+
+    def read_bytes(self, path: str, max_bytes: int = 60_000_000) -> bytes:
+        f, _ = self.resolve(path)
+        if not f.is_file():
+            raise ComputerError(f"{path} is not a file.")
+        if f.stat().st_size > max_bytes:
+            raise ComputerError(f"{path} is too large to read ({f.stat().st_size // 1_000_000} MB).")
+        return f.read_bytes()
+
     def delete(self, path: str, who: str = "") -> None:
         f, inside = self.resolve(path)
         if f == self.workspace.resolve():
@@ -247,7 +263,8 @@ class Computer:
                 pass
 
     # -------------------------------------------------------------------- web
-    def web_fetch(self, bot_id: str | None, url: str, max_chars: int = 20000) -> dict:
+    def fetch(self, bot_id: str | None, url: str) -> tuple[object, str]:
+        """GET a URL with the network policy checked on every redirect hop. Returns (httpx response, final url)."""
         import httpx
         if not re.match(r"^[a-z][a-z0-9+.-]*://", url, re.I):
             url = "https://" + url
@@ -268,6 +285,10 @@ class Computer:
                 break
             else:
                 raise ComputerError("Too many redirects.")
+        return r, cur
+
+    def web_fetch(self, bot_id: str | None, url: str, max_chars: int = 20000) -> dict:
+        r, cur = self.fetch(bot_id, url)
         ctype = r.headers.get("content-type", "")
         body = r.content[:2_000_000]
         text = body.decode(r.encoding or "utf-8", errors="replace")

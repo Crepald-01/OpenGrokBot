@@ -7,6 +7,7 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from . import documents
 from .browser import BrowserError, Screen
 from .computer import ComputerError
 from .netpolicy import host_of
@@ -369,6 +370,56 @@ def builtin_tools(eng: "Engine") -> list[ToolSpec]:
 
     add("fs_move", "Move or rename a file/folder.", {"src": s("From"), "dst": s("To")}, ["src", "dst"], fs_move, risk=r_move, label=lambda a: f"Move {a.get('src')} to {a.get('dst')}")
 
+    # ------------------------------------------------------------------ spreadsheets and PDFs
+    def _doc(fn):
+        def run(ctx: ToolContext, a: dict) -> ToolResult:
+            try:
+                return fn(ctx, a)
+            except documents.DocumentError as e:
+                return ToolResult(str(e), is_error=True)
+        return run
+
+    def spreadsheet_read(ctx: ToolContext, a: dict) -> ToolResult:
+        path = a["path"]
+        if documents.kind_of(path) == "csv":
+            text, _ = comp.read_file(path, 2_000_000)
+            return ToolResult(f"Rows of {path} (tab-separated):", data=documents.read_csv_text(text, int(a.get("max_rows", 200) or 200)), untrusted=f"spreadsheet {path}", path=path)
+        text, info = documents.read_xlsx(comp.read_bytes(path), a.get("sheet", ""), int(a.get("max_rows", 200) or 200))
+        return ToolResult(f"{path}: sheets {', '.join(info['sheets'])}.", data=text, untrusted=f"spreadsheet {path}", path=path)
+
+    add("spreadsheet_read", "Read an Excel (.xlsx) or CSV file from the workspace as tab-separated rows, sheet by sheet. Formulas show their last saved value. "
+        "Row and column limits apply; ask for a specific sheet or more rows when you need them.",
+        {"path": s("File path"), "sheet": s("Sheet name (default: all sheets)"), "max_rows": i("Rows per sheet, default 200, max 5000")}, ["path"], _doc(spreadsheet_read),
+        read_only=True, risk=lambda ctx, a: r_outside(a, "Read"), label=lambda a: f"Read spreadsheet {a.get('path')}")
+
+    def spreadsheet_write(ctx: ToolContext, a: dict) -> ToolResult:
+        data = documents.write_xlsx(a["sheets"])
+        f = comp.write_bytes(a["path"], data, who=ctx.bot["id"])
+        return ToolResult(f"Wrote a new workbook to {rel(f)} ({len(a['sheets'])} sheet(s)). Text that looks like a formula was saved as plain text.", path=str(f))
+
+    def r_sheet_write(ctx: ToolContext, a: dict) -> Risk | None:
+        f, inside = comp.resolve(a["path"])
+        summary = f"sheets: {', '.join(map(str, (a.get('sheets') or {}).keys()))}"
+        if not inside:
+            return Risk("outside_workspace", f"Write a workbook to {f} (outside the workspace)", {"path": str(f), "pattern": str(f.parent), "preview": summary}, never_auto=True)
+        if f.exists():
+            return Risk("overwrite", f"Overwrite {rel(f)} with a new workbook", {"path": str(f), "pattern": str(f), "preview": summary})
+        return None
+
+    add("spreadsheet_write", "Create an Excel (.xlsx) file in the workspace from rows of cells. Writing a new file needs no approval; replacing an existing file does. "
+        "To change a spreadsheet, read it, then write the result to a NEW file name.",
+        {"path": s("File path ending in .xlsx"), "sheets": {"type": "object", "description": "Sheet name -> list of rows, each row a list of cells"}}, ["path", "sheets"],
+        _doc(spreadsheet_write), risk=r_sheet_write, label=lambda a: f"Write spreadsheet {a.get('path')}")
+
+    def pdf_read(ctx: ToolContext, a: dict) -> ToolResult:
+        text, info = documents.read_pdf(comp.read_bytes(a["path"], documents.MAX_PDF_BYTES), int(a.get("from_page", 1) or 1), int(a["to_page"]) if a.get("to_page") else None)
+        more = f" Pages {info['from']}-{info['to']} of {info['pages']}." + (" Ask for later pages with from_page." if info["to"] < info["pages"] else "")
+        return ToolResult(f"Text of {a['path']}.{more}", data=text[:60000], untrusted=f"PDF {a['path']}", path=a["path"])
+
+    add("pdf_read", "Read the text of a PDF in the workspace, page by page. Scanned PDFs without a text layer cannot be read.",
+        {"path": s("File path"), "from_page": i("First page, default 1"), "to_page": i("Last page, default the end (long files are cut at 400 pages)")}, ["path"], _doc(pdf_read),
+        read_only=True, risk=lambda ctx, a: r_outside(a, "Read"), label=lambda a: f"Read PDF {a.get('path')}")
+
     # ------------------------------------------------------------------ terminal
     def run_command(ctx: ToolContext, a: dict) -> ToolResult:
         res = comp.run_command(a["command"], a.get("cwd"), int(a.get("timeout", 60)), a.get("shell", "default"), stop=ctx.run.stop, who=ctx.bot["name"])
@@ -554,7 +605,7 @@ def builtin_tools(eng: "Engine") -> list[ToolSpec]:
         hits = eng.knowledge.search(a["query"], ctx.bot["id"], int(a.get("limit", 6) or 6))
         if not hits:
             return ToolResult(f"No passages in the knowledge base match '{a['query']}'. Try other words, or ask the user to add the document.")
-        lines = [f"[{h['name']} · passage {h['seq']} · id {h['source_id']}]\n{h['text'][:900]}" for h in hits]
+        lines = [f"[{h['name']} · passage {h['seq']} · id {h['source_id']} · matched on {h.get('why', 'keyword')}]\n{h['text'][:900]}" for h in hits]
         return ToolResult(f"{len(hits)} passage(s) from the user's knowledge base for '{a['query']}':", data="\n\n---\n\n".join(lines), untrusted="the knowledge base")
 
     add("knowledge_search", "Search the user's knowledge base (documents they added: notes, manuals, policies, reports). Returns the best matching passages with their source. "

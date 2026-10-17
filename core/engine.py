@@ -21,6 +21,7 @@ from .doctor import Doctor
 from .filehistory import FileHistory
 from .files import Files
 from .insights import Insights
+from .embeddings import Embedder
 from .knowledge import Knowledge
 from .events import EventBus
 from .mcp import McpManager
@@ -36,7 +37,7 @@ from .library import Library
 from .templates import TEAM_PRESET, template as get_template
 from .threads import Threads, fork_thread
 from .tooling import ToolSpec
-from .triggers import Triggers
+from .triggers import POLL_TICK, Triggers
 from .tools_builtin import builtin_tools
 from .updates import Updates
 from .usage import Usage
@@ -82,6 +83,8 @@ class Engine:
         self.threads = Threads(self.db, self.events, self.bots.names, self.describe_tool)
         self.search = Search(self.db, self.bots.names)
         self.knowledge = Knowledge(self.db)
+        self.embedder = Embedder(self)
+        self.knowledge.embedder = self.embedder
         self.channels = Channels(self.settings)
         self.apitokens = ApiTokens(self.db)
         self.digest = Digest(self)
@@ -113,6 +116,8 @@ class Engine:
         s.add_job(self.messaging.proactive_tick, "interval", minutes=10, id="_proactive", replace_existing=True)
         s.add_job(self._digest_tick, "interval", minutes=1, id="_digest", replace_existing=True)
         s.add_job(self.triggers.tick, "interval", seconds=10, id="_triggers", replace_existing=True)
+        s.add_job(self.knowledge.index_pending, "interval", seconds=60, id="_embed", replace_existing=True, max_instances=1, coalesce=True)
+        s.add_job(self.triggers.poll, "interval", seconds=POLL_TICK, id="_poll", replace_existing=True, max_instances=1, coalesce=True)
         self.log.info("Engine started (v%s). Data dir: %s", VERSION, paths.data_dir())
 
     def start_background_checks(self) -> None:

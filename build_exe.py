@@ -64,7 +64,7 @@ def main() -> int:
     for mod in ("mcp", "mcp.client.stdio", "mcp.client.sse", "mcp.client.streamable_http", "mcp.client.session"):
         cmd += ["--hidden-import", mod]
     cmd += ["--exclude-module", "mcp.cli"]
-    for pkg in ("playwright", "certifi", "anthropic", "openai", "fastapi", "starlette", "pydantic", "pydantic_core", "keyring", "apscheduler", "tzlocal", "qrcode"):
+    for pkg in ("playwright", "certifi", "anthropic", "openai", "fastapi", "starlette", "pydantic", "pydantic_core", "keyring", "apscheduler", "tzlocal", "qrcode", "pypdf", "openpyxl", "et_xmlfile"):   # pypdf and openpyxl are imported lazily, so PyInstaller cannot see them
         cmd += ["--collect-all", pkg]
     for mod in ("uvicorn", "uvicorn.logging", "uvicorn.loops", "uvicorn.protocols", "uvicorn.lifespan", "keyring.backends", "keyring.backends.Windows", "multipart",
                 "httpx", "anyio", "h11", "sqlite3"):

@@ -206,7 +206,8 @@ def build_gmail(c: Conn) -> list[ToolSpec]:
     def H() -> dict:
         return c.google_headers()
 
-    def search(ctx, a):
+    def search_raw(ctx, a) -> list[dict]:
+        """The message summaries as a list. The Gmail trigger calls this too, so it sees exactly what the tool sees."""
         res = c.http(ctx, "GET", f"{base}/messages", headers=H(), params={"q": a.get("query", ""), "maxResults": min(int(a.get("max_results", 10)), 25)})
         out = []
         for m in res.get("messages", []):
@@ -215,7 +216,10 @@ def build_gmail(c: Conn) -> list[ToolSpec]:
             hd = {x["name"]: x["value"] for x in d.get("payload", {}).get("headers", [])}
             out.append({"id": d["id"], "thread_id": d["threadId"], "from": hd.get("From"), "to": hd.get("To"), "subject": hd.get("Subject"),
                         "date": hd.get("Date"), "snippet": d.get("snippet"), "labels": d.get("labelIds")})
-        return out or "No messages matched."
+        return out
+
+    def search(ctx, a):
+        return search_raw(ctx, a) or "No messages matched."
 
     def read(ctx, a):
         d = c.http(ctx, "GET", f"{base}/messages/{a['message_id']}", headers=H(), params={"format": "full"})
@@ -261,10 +265,12 @@ def build_gmail(c: Conn) -> list[ToolSpec]:
                   "cc": s("Cc addresses"), "thread_id": s("Gmail thread id when replying"), "in_reply_to": s("Message-ID header being replied to")}
     send_risk = R("send", lambda a: f"Send email to {a.get('to')}: \"{short(a.get('subject', ''), 80)}\"", lambda a: str(a.get("to", "*")).lower(),
                   detail=lambda a: {"to": a.get("to"), "cc": a.get("cc"), "subject": a.get("subject"), "body": short(a.get("body", ""), 1500)})
+    gs = T("gmail_search", "Search Gmail with Gmail query syntax (e.g. 'is:unread newer_than:2d'). Returns message summaries.",
+           {"query": s("Gmail search query"), "max_results": i("Max results (<=25)")}, ["query"], search, read=True, untrusted="Gmail",
+           label=lambda a: f"Search Gmail: {a.get('query', '')}")
+    gs.raw = search_raw
     return [
-        T("gmail_search", "Search Gmail with Gmail query syntax (e.g. 'is:unread newer_than:2d'). Returns message summaries.",
-          {"query": s("Gmail search query"), "max_results": i("Max results (<=25)")}, ["query"], search, read=True, untrusted="Gmail",
-          label=lambda a: f"Search Gmail: {a.get('query', '')}"),
+        gs,
         T("gmail_read", "Read one email by id.", {"message_id": s("Message id")}, ["message_id"], read, read=True, untrusted="an email",
           label=lambda a: "Read an email"),
         T("gmail_create_draft", "Create a draft email (not sent). Use this to propose replies.", mail_props, ["to", "subject", "body"], draft,
@@ -285,11 +291,15 @@ def build_calendar(c: Conn) -> list[ToolSpec]:
     def H() -> dict:
         return c.google_headers()
 
-    def events(ctx, a):
+    def events_raw(ctx, a) -> list[dict]:
+        """Events as a list. The calendar trigger calls this too, so it sees exactly what the tool sees."""
         res = c.http(ctx, "GET", f"{base}/calendars/{quote(a.get('calendar_id', 'primary'))}/events", headers=H(),
                      params={"timeMin": a["time_min"], "timeMax": a["time_max"], "singleEvents": "true", "orderBy": "startTime", "maxResults": 50})
         return [{"id": e["id"], "summary": e.get("summary"), "start": e.get("start"), "end": e.get("end"), "location": e.get("location"),
-                 "attendees": [x.get("email") for x in e.get("attendees", [])]} for e in res.get("items", [])] or "No events."
+                 "attendees": [x.get("email") for x in e.get("attendees", [])]} for e in res.get("items", [])]
+
+    def events(ctx, a):
+        return events_raw(ctx, a) or "No events."
 
     def free(ctx, a):
         res = c.http(ctx, "POST", f"{base}/freeBusy", headers=H(), json_body={"timeMin": a["time_min"], "timeMax": a["time_max"],
@@ -313,10 +323,12 @@ def build_calendar(c: Conn) -> list[ToolSpec]:
             return Risk("send", f"Create event '{a.get('summary')}' and invite {', '.join(a['attendees'])}", {"pattern": "invite", "start": a.get("start")})
         return None
 
+    ge = T("gcal_list_events", "List calendar events in a time range (RFC3339 times with timezone).",
+           {"time_min": s("RFC3339 start"), "time_max": s("RFC3339 end"), "calendar_id": s("Calendar id, default primary")}, ["time_min", "time_max"],
+           events, read=True, untrusted="Google Calendar", label=lambda a: "List calendar events")
+    ge.raw = events_raw
     return [
-        T("gcal_list_events", "List calendar events in a time range (RFC3339 times with timezone).",
-          {"time_min": s("RFC3339 start"), "time_max": s("RFC3339 end"), "calendar_id": s("Calendar id, default primary")}, ["time_min", "time_max"],
-          events, read=True, untrusted="Google Calendar", label=lambda a: "List calendar events"),
+        ge,
         T("gcal_freebusy", "Find busy periods to propose meeting times.", {"time_min": s("RFC3339"), "time_max": s("RFC3339"),
                                                                             "calendars": {"type": "array", "items": {"type": "string"}}},
           ["time_min", "time_max"], free, read=True, untrusted="Google Calendar", label=lambda a: "Check free/busy"),

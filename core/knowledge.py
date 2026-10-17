@@ -17,7 +17,7 @@ from .db import Database, new_id, now
 TEXT_EXT = {".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".log", ".py", ".js", ".ts", ".tsx", ".jsx", ".css", ".xml", ".yml", ".yaml", ".toml", ".ini",
             ".cfg", ".sql", ".rst", ".tex", ".sh", ".bat", ".ps1"}
 HTML_EXT = {".html", ".htm"}
-SUPPORTED = TEXT_EXT | HTML_EXT | {".docx"}
+SUPPORTED = TEXT_EXT | HTML_EXT | {".docx", ".pdf", ".xlsx"}
 MAX_SOURCE_CHARS = 2_000_000      # text kept per source
 MAX_FILE_BYTES = 20_000_000       # files larger than this are skipped
 MAX_FOLDER_FILES = 500
@@ -55,8 +55,12 @@ def extract_text(filename: str, data: bytes) -> str:
     ext = Path(filename).suffix.lower()
     if ext == ".docx":
         return _docx_text(data)
-    if ext == ".pdf":
-        raise KnowledgeError("PDF files are not supported yet. Export the PDF to text or Word and add that.")
+    if ext in (".pdf", ".xlsx"):
+        from . import documents
+        try:
+            return (documents.read_pdf(data)[0] if ext == ".pdf" else documents.read_xlsx(data, max_rows=2000)[0]).strip()
+        except documents.DocumentError as e:
+            raise KnowledgeError(str(e)) from e
     if ext not in SUPPORTED:
         head = data[:4096]
         if b"\0" in head:
@@ -106,6 +110,7 @@ def _fts_query(q: str, mode: str = "and") -> str:
 class Knowledge:
     def __init__(self, db: Database):
         self.db = db
+        self.embedder = None          # set by the engine; None (tests, tools) means keyword search only
         self.fts = True
         try:
             with db._write_lock:
@@ -214,6 +219,8 @@ class Knowledge:
         ids = [r["id"] for r in self.db.query("SELECT id FROM knowledge_chunks WHERE source_id=?", (sid,))]
         if self.fts and ids:
             self.db.conn.executemany("DELETE FROM knowledge_fts WHERE rowid=?", [(i,) for i in ids])
+        if ids:
+            self.db.conn.executemany("DELETE FROM knowledge_vectors WHERE chunk_id=?", [(i,) for i in ids])
         self.db.conn.execute("DELETE FROM knowledge_chunks WHERE source_id=?", (sid,))
 
     def remove(self, sid: str) -> None:
@@ -241,15 +248,96 @@ class Knowledge:
 
     def stats(self) -> dict:
         return {"sources": int(self.db.scalar("SELECT COUNT(*) FROM knowledge_sources", (), 0)), "passages": int(self.db.scalar("SELECT COUNT(*) FROM knowledge_chunks", (), 0)),
-                "chars": int(self.db.scalar("SELECT COALESCE(SUM(LENGTH(text)),0) FROM knowledge_chunks", (), 0)), "fts": self.fts}
+                "chars": int(self.db.scalar("SELECT COALESCE(SUM(LENGTH(text)),0) FROM knowledge_chunks", (), 0)), "fts": self.fts,
+                "vectors": int(self.db.scalar("SELECT COUNT(*) FROM knowledge_vectors", (), 0))}
 
     # ------------------------------------------------------------------------- finding
     def search(self, query: str, bot_id: str | None = None, limit: int = 8) -> list[dict]:
-        """Best passages for a question: [{source_id, name, seq, text, snippet}], most relevant first."""
+        """Best passages for a question, most relevant first: [{source_id, name, seq, text, snippet, why}].
+        `why` says what matched: "keyword", "meaning" or "keyword + meaning". Meaning-based search is used only when it is switched on and
+        working; otherwise (or if the embedding service fails) this is exactly the keyword search."""
         query = (query or "").strip()
         if not query:
             return []
         limit = max(1, min(30, limit))
+        rows = self.keyword_search(query, bot_id, limit * 2 if self.embedder else limit)
+        for r in rows:
+            r["why"] = "keyword"
+        sem = self.semantic_search(query, bot_id, limit * 2) if self.embedder else []
+        return self._fuse(rows, sem, limit) if sem else rows[:limit]
+
+    @staticmethod
+    def _fuse(kw: list[dict], sem: list[dict], limit: int) -> list[dict]:
+        """Reciprocal rank fusion: a passage ranks high if either search ranks it high, higher still if both do."""
+        score: dict[tuple, float] = {}
+        row: dict[tuple, dict] = {}
+        for rank, r in enumerate(kw):
+            k = (r["source_id"], r["seq"])
+            score[k] = score.get(k, 0) + 1 / (60 + rank)
+            row[k] = dict(r)
+        for rank, r in enumerate(sem):
+            k = (r["source_id"], r["seq"])
+            score[k] = score.get(k, 0) + 1 / (60 + rank)
+            if k in row:
+                row[k]["why"] = "keyword + meaning"
+            else:
+                row[k] = dict(r)
+        return [row[k] for k in sorted(score, key=lambda k: -score[k])][:limit]
+
+    def semantic_search(self, query: str, bot_id: str | None, limit: int) -> list[dict]:
+        from . import embeddings as E
+        try:
+            ok, _ = self.embedder.usable()                                     # type: ignore[union-attr]
+            if not ok:
+                return []
+            model = self.embedder.config()["model"]                            # type: ignore[union-attr]
+            scope_sql, scope_args = ("", [])
+            if bot_id is not None:
+                scope_sql, scope_args = (" AND (s.bot_id='' OR s.bot_id=?)", [bot_id])
+            rows = self.db.query("SELECT v.chunk_id, v.vec, c.source_id, c.seq, c.text, s.name FROM knowledge_vectors v JOIN knowledge_chunks c ON c.id=v.chunk_id "
+                                 f"JOIN knowledge_sources s ON s.id=c.source_id WHERE v.model=?{scope_sql} ORDER BY s.updated_at DESC LIMIT ?", [model, *scope_args, E.MAX_SCAN])
+            if not rows:
+                return []
+            q = E.unpack(E.pack(self.embedder.embed([query])[0]))              # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001   (a failing embedding service must never break search: keyword results still come back)
+            return []
+        scored = sorted(((E.cosine(q, E.unpack(r["vec"])), r) for r in rows), key=lambda t: -t[0])[:limit]
+        return [{"source_id": r["source_id"], "name": r["name"], "seq": r["seq"], "text": r["text"], "snippet": r["text"][:240], "why": "meaning"}
+                for sc, r in scored if sc > 0.2]
+
+    def index_pending(self) -> int:
+        """Embed passages that have no vector for the current model (a few at a time, in the background). Returns how many."""
+        emb = self.embedder
+        if emb is None:
+            return 0
+        ok, _ = emb.usable()
+        if not ok:
+            return 0
+        from . import embeddings as E
+        model = emb.config()["model"]
+        rows = self.db.query("SELECT c.id, c.text FROM knowledge_chunks c LEFT JOIN knowledge_vectors v ON v.chunk_id=c.id AND v.model=? WHERE v.chunk_id IS NULL "
+                             "ORDER BY c.id LIMIT ?", (model, E.INDEX_PER_RUN))
+        if not rows:
+            return 0
+        try:
+            vecs = emb.embed([r["text"] for r in rows])
+        except E.EmbedError:
+            return 0
+        with self.db._write_lock:
+            self.db.conn.executemany("INSERT OR REPLACE INTO knowledge_vectors(chunk_id, model, vec) VALUES(?,?,?)", [(r["id"], model, E.pack(v)) for r, v in zip(rows, vecs)])
+            self.db.conn.commit()
+        return len(rows)
+
+    def clear_vectors(self) -> None:
+        with self.db._write_lock:
+            self.db.conn.execute("DELETE FROM knowledge_vectors")
+            self.db.conn.commit()
+
+    def keyword_search(self, query: str, bot_id: str | None = None, limit: int = 8) -> list[dict]:
+        query = (query or "").strip()
+        if not query:
+            return []
+        limit = max(1, min(60, limit))
         scope_sql, scope_args = ("", [])
         if bot_id is not None:
             scope_sql, scope_args = (" AND (s.bot_id='' OR s.bot_id=?)", [bot_id])

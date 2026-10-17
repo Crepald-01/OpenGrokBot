@@ -36,6 +36,7 @@ DEFAULTS: dict[str, Any] = {
                       "min_turn_seconds": 20, "ntfy_url": "", "ntfy_topic": "",
                       "quiet_enabled": False, "quiet_start": "22:00", "quiet_end": "07:00", "dnd_until": 0},
     "usage": {"weekly_token_limit": 0, "reset_weekday": 0},
+    "knowledge": {"embeddings": False, "profile": "", "model": "text-embedding-3-small"},
     "computer": {"headless": True, "viewport_w": 1280, "viewport_h": 800},
     "mobile": {"enabled": True, "host": "127.0.0.1", "port": 8765},
     "proactive": {"interval_min": 180},
@@ -169,6 +170,9 @@ class Admin:
 
     def plugin_install_allowed(self) -> bool:
         return bool(self.data.get("allow_plugin_install", True))
+
+    def embeddings_allowed(self) -> bool:
+        return bool(self.data.get("allow_embeddings", True))
 
     def remote_mode_allowed(self) -> bool:
         return bool(self.data.get("allow_remote_mode", True))

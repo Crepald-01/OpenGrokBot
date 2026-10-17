@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.0 (unreleased)
+
+Bots that react on their own, and documents they can read.
+
+- **New triggers.** Besides webhooks and folder watches, a trigger can now start a Bot when:
+  - a **web page changes** (checked every few minutes; it must stay changed for two checks in a row, so a clock or an ad does not fire it; you can watch just the part of the page that starts at a line you name, and you are told what changed),
+  - a **feed** (RSS or Atom) has a new item,
+  - a **new email** matches a Gmail search (through the Gmail connector),
+  - a **calendar** event is about to start (through the Google Calendar connector).
+  Items that are already there when you create a trigger never fire. If more arrive than one check can start, the rest are started on the next checks, not dropped. Each trigger has a daily limit (default 20 tasks), a failing source shows its problem on the trigger instead of filling the history, and **Check now** tries one right away. Because pages, feeds, mails and invitations are written by other people, tasks they start never get automatic approvals. The page check is plain HTTP: it cannot see content that only appears after scripts run and does not use your logins.
+- **Pause all triggers** (Automations > Triggers, or Ctrl+K), a banner while paused, and **From a template…** (log invoices that arrive by email, tell me when a page changes, watch a price, summarise new posts from a feed, brief me before meetings).
+- **Home > Coming up.** Routines and scheduled workflows due in the next day, and how many triggers are watching (and how many have a problem).
+- **PDF, Excel and CSV.** The knowledge base accepts `.pdf` and `.xlsx`. Bots get three new tools: `pdf_read` (page by page; scanned or password-protected PDFs say so instead of returning nothing), `spreadsheet_read` (Excel and CSV, sheet by sheet, saved values only; no formulas are calculated and no macros run) and `spreadsheet_write` (creates a new `.xlsx`; replacing a file asks first, and anything outside the workspace is never approved automatically; text that would start a formula is saved as plain text). Sizes, pages, rows and cells are capped. Table layout in PDFs is not reconstructed: you get the text in reading order.
+- **Meaning-based search (optional, off by default).** Knowledge > Meaning search… finds passages that say the same thing in other words. It sends the text of your documents to the embedding service you choose, so it needs an explicit confirmation; a local service (Ollama, LM Studio) keeps everything on your PC. Anthropic has no embeddings service. It respects the administrator policy (`allow_embeddings`) and the network policy, and switching it off deletes the stored vectors. If the service fails, search quietly falls back to keywords. Every search result now says why it matched (your words, the meaning, or both).
+- API tokens cannot create or check triggers, pause them, or change the meaning-search setting.
+- New dependencies: `pypdf` and `openpyxl` (bundled in the installer).
+
 ## 2.3.0
 
 Trust and polish: finish the loose ends from 2.2.

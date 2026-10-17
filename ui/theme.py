@@ -182,6 +182,7 @@ QLabel[h2="true"] {{ font-size: {fs + 1}px; font-weight: 600; }}
 QLabel[eyebrow="true"] {{ color: {c['muted']}; font-size: {small}px; font-weight: 600; letter-spacing: 1px; }}
 QLabel[chip="true"] {{ background: {c['panel2']}; color: {c['muted']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
 QLabel[chip="ok"] {{ background: {c['ok_bg']}; color: {c['ok']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
+QLabel[callout="warn"] {{ background: {c['warn_bg']}; color: {c['text']}; border: 1px solid {c['warn']}; border-radius: 10px; padding: 10px 14px; }}
 QLabel[chip="warn"] {{ background: {c['warn_bg']}; color: {c['warn']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
 QLabel[chip="bad"] {{ background: {c['bad_bg']}; color: {c['bad']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}
 QLabel[chip="work"] {{ background: {c['accent_dim']}; color: {c['accent']}; border-radius: 9px; padding: 2px 10px; font-size: {tiny}px; }}

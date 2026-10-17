@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks(
   id INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT, seq INTEGER, text TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_kchunks_source ON knowledge_chunks(source_id, seq);
+CREATE TABLE IF NOT EXISTS knowledge_vectors(chunk_id INTEGER PRIMARY KEY, model TEXT, vec BLOB);
 CREATE TABLE IF NOT EXISTS triggers(
   id TEXT PRIMARY KEY, name TEXT, kind TEXT, bot_id TEXT, prompt TEXT DEFAULT '', secret_hash TEXT DEFAULT '', secret_hint TEXT DEFAULT '',
   folder TEXT DEFAULT '', pattern TEXT DEFAULT '*', enabled INTEGER DEFAULT 1, dry_run INTEGER DEFAULT 0, created_at REAL,
@@ -139,7 +140,10 @@ CREATE TABLE IF NOT EXISTS api_tokens(
 # columns added after the first release: applied to existing databases when they are opened
 MIGRATIONS = [("bots", "daily_token_limit", "INTEGER DEFAULT 0"),
               ("bots", "fallback_profile", "TEXT DEFAULT ''"), ("bots", "fallback_model", "TEXT DEFAULT ''"),
-              ("triggers", "workflow_id", "TEXT DEFAULT ''")]
+              ("triggers", "workflow_id", "TEXT DEFAULT ''"),
+              ("triggers", "url", "TEXT DEFAULT ''"), ("triggers", "query", "TEXT DEFAULT ''"), ("triggers", "minutes", "INTEGER DEFAULT 0"),
+              ("triggers", "interval_min", "INTEGER DEFAULT 0"), ("triggers", "max_per_day", "INTEGER DEFAULT 0"), ("triggers", "state", "TEXT DEFAULT '{}'"),
+              ("triggers", "last_error", "TEXT DEFAULT ''"), ("triggers", "next_check_at", "REAL DEFAULT 0"), ("triggers", "last_checked_at", "REAL DEFAULT 0")]
 
 
 def new_id(n: int = 12) -> str:

@@ -1,13 +1,14 @@
 """Automations: everything your Bots do without being asked. Routines (on a schedule), Workflows (a pipeline of Bots) and Triggers
-(when a webhook is called or a file appears)."""
+(a webhook is called, a file appears, a web page changes, a feed has a new item, a new email arrives, an event is about to start)."""
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QLineEdit, QMessageBox, QPlainTextEdit, QScrollArea, QSplitter,
-                               QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QScrollArea, QSpinBox,
+                               QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from . import theme
 from .api import Api
@@ -19,6 +20,50 @@ from .widgets import PageHeader, button, clear_layout, label, page_layout
 PLACEHOLDERS_WORKFLOW = "Use {{input}} for what you give the workflow when you run it, {{previous}} for the last step's result, and {{step1}}, {{step2}}… for any earlier step."
 PLACEHOLDERS_WEBHOOK = "Use {{payload}} for what was sent, {{json.name}} for a field of a JSON body, {{time}} for the time. Whatever arrives is passed to the Bot as untrusted data."
 PLACEHOLDERS_FOLDER = "Use {{file}} for the file's path in the workspace, {{filename}} for its name and {{folder}} for the watched folder."
+PLACEHOLDERS_POLL = "Use {{event}} for the title (page change, feed item, mail subject, event name), {{payload}} for the details, {{url}} for the address. They come from other people, so they are passed to the Bot as untrusted data."
+
+KIND_TITLES = {"webhook": "webhook", "folder": "folder watch", "page": "page change trigger", "feed": "feed trigger", "email": "email trigger", "calendar": "calendar trigger"}
+KIND_HELP = {
+    "webhook": "A webhook gives you an address that anything can POST to.",
+    "folder": "The workspace folder is checked every few seconds. When a new or changed file matches, the task starts.",
+    "page": "The page is fetched every few minutes. When its text changes, and stays changed for two checks in a row, the task starts and is told what changed. "
+            "The page is read as plain text: it cannot see content that only appears after scripts run, and it does not use your logins.",
+    "feed": "An RSS or Atom feed is checked every few minutes. Each new item starts the task. Items that were already there when you create the trigger are ignored.",
+    "email": "Gmail is searched every few minutes through the Gmail connector (the Bot needs it, see Plugins). Each new matching email starts the task. Mail that is already there is ignored.",
+    "calendar": "The Google Calendar connector is checked every few minutes (the Bot needs it, see Plugins). The task starts shortly before each event, once. All-day events are skipped.",
+}
+POLL_KINDS = ("page", "feed", "email", "calendar")
+MIN_INTERVAL = {"page": 5, "feed": 5, "email": 2, "calendar": 1}
+DEFAULT_INTERVAL = {"page": 30, "feed": 15, "email": 5, "calendar": 5}
+
+# One-click starting points. They fill the dialog; nothing is created until you press Save.
+TRIGGER_TEMPLATES = [
+    {"title": "Log invoices that arrive by email", "kind": "email", "name": "Invoices by email", "query": "has:attachment (invoice OR receipt) is:unread",
+     "prompt": "A new email arrived: {{event}}\n{{payload}}\nRead it. If it is an invoice or receipt, add a line (sender, amount, due date) to shared/invoices.csv. Do not reply to anyone."},
+    {"title": "Tell me when a page changes", "kind": "page", "name": "Page watch",
+     "prompt": "{{url}} changed:\n{{payload}}\nExplain in two short lines what changed and whether it matters, then notify me."},
+    {"title": "Watch a price on a page", "kind": "page", "name": "Price watch", "query": "Price",
+     "prompt": "The price section of {{url}} changed:\n{{payload}}\nTell me the old and new price, and whether it is a drop."},
+    {"title": "Summarise new posts from a feed", "kind": "feed", "name": "Reading list",
+     "prompt": "New post: {{event}}\n{{payload}}\nSummarise it in three bullet points and add it to shared/reading-list.md with its link."},
+    {"title": "Brief me before meetings", "kind": "calendar", "name": "Meeting briefs", "minutes": 15,
+     "prompt": "{{event}} is about to start.\n{{payload}}\nPrepare a short brief: who is attending, anything recent from them in Gmail, and open questions. Save it as shared/briefs/ and notify me."},
+]
+
+
+def describe_trigger(t: dict) -> str:
+    k = t["kind"]
+    if k == "webhook":
+        return "Webhook"
+    if k == "folder":
+        return f"Folder: {t['folder'] or '(workspace)'} · {t['pattern']}"
+    every = f" · every {t.get('interval_min', '')} min"
+    if k in ("page", "feed"):
+        host = urlparse(t.get("url", "")).netloc or t.get("url", "")
+        return ("Page: " if k == "page" else "Feed: ") + host + (f" ({t['query']})" if k == "page" and t.get("query") else "") + every
+    if k == "email":
+        return f"Email: {t.get('query', '')}" + every
+    return f"Calendar: {t.get('minutes', '')} min before events" + every
 
 
 def took(r: dict) -> str:
@@ -373,35 +418,68 @@ class WebhookShown(QDialog):
 
 
 class TriggerDialog(QDialog):
-    def __init__(self, api: Api, store: Store, kind: str, trigger: dict | None = None, workflows: list[dict] | None = None, parent=None):
+    def __init__(self, api: Api, store: Store, kind: str, trigger: dict | None = None, workflows: list[dict] | None = None, parent=None, preset: dict | None = None):
         super().__init__(parent)
         self.api, self.store, self.kind, self.trigger = api, store, kind, trigger
         self.created: dict | None = None
-        self.setWindowTitle(("Edit " if trigger else "New ") + ("webhook" if kind == "webhook" else "folder watch"))
-        self.resize(600, 520)
+        pre = preset or {}
+        poll = kind in POLL_KINDS
+        self.setWindowTitle(("Edit " if trigger else "New ") + KIND_TITLES.get(kind, kind))
+        self.resize(640, 640 if poll else 520)
         v = QVBoxLayout(self)
-        v.addWidget(label("A webhook gives you an address that anything can POST to." if kind == "webhook" else
-                          "The workspace folder is checked every few seconds. When a new or changed file matches, the task starts.", muted=True))
+        v.addWidget(label(KIND_HELP.get(kind, ""), muted=True))
         f = QFormLayout()
-        self.name = QLineEdit(trigger["name"] if trigger else "")
-        self.name.setPlaceholderText("e.g. New order form" if kind == "webhook" else "e.g. Invoices dropbox")
+        self.name = QLineEdit(trigger["name"] if trigger else pre.get("name", ""))
+        self.name.setPlaceholderText({"webhook": "e.g. New order form", "folder": "e.g. Invoices dropbox", "page": "e.g. Competitor pricing", "feed": "e.g. Vendor blog",
+                                      "email": "e.g. Invoices by email", "calendar": "e.g. Meeting briefs"}.get(kind, ""))
         self.target = QComboBox()
         wf_target = bool(trigger and trigger.get("workflow_id"))
         if not wf_target:
             for b in store.bots:
                 self.target.addItem(f"{b.get('emoji') or '🤖'}  {b['name']}", ("bot", b["id"]))
-        if not trigger or wf_target:
+        if (not trigger or wf_target) and kind not in ("email", "calendar"):        # mail and calendar are read through a Bot's connector, so they need a Bot
             for w in workflows or []:
                 self.target.addItem(f"⛓  Workflow: {w['name']}", ("wf", w["id"]))
         if trigger:
             want = ("wf", trigger["workflow_id"]) if wf_target else ("bot", trigger["bot_id"])
             self.target.setCurrentIndex(max(0, self.target.findData(want)))
             self.target.setEnabled(not wf_target)
-        self.prompt = QPlainTextEdit(trigger["prompt"] if trigger else "")
-        self.prompt.setPlaceholderText("e.g. A customer submitted this form: {{payload}}. Add them to the tracker and reply with a short confirmation." if kind == "webhook" else
-                                       "e.g. A new invoice arrived: {{file}}. Read it, extract the total and due date, and add a line to shared/invoices.csv.")
+        self.prompt = QPlainTextEdit(trigger["prompt"] if trigger else pre.get("prompt", ""))
+        self.prompt.setPlaceholderText({
+            "webhook": "e.g. A customer submitted this form: {{payload}}. Add them to the tracker and reply with a short confirmation.",
+            "folder": "e.g. A new invoice arrived: {{file}}. Read it, extract the total and due date, and add a line to shared/invoices.csv.",
+        }.get(kind, "e.g. {{event}} happened:\n{{payload}}\nDecide what matters and tell me in two lines."))
         f.addRow("Name", self.name)
         f.addRow("Runs", self.target)
+        self.url = QLineEdit(trigger.get("url", "") if trigger else pre.get("url", ""))
+        self.url.setPlaceholderText("https://example.com/pricing" if kind == "page" else "https://example.com/feed.xml")
+        self.query = QLineEdit(trigger.get("query", "") if trigger else pre.get("query", ""))
+        self.minutes = QSpinBox()
+        self.minutes.setRange(1, 1440)
+        self.minutes.setValue(int(trigger.get("minutes") or 15) if trigger else int(pre.get("minutes", 15)))
+        self.minutes.setSuffix(" minutes before the event")
+        self.every = QSpinBox()
+        self.every.setRange(MIN_INTERVAL.get(kind, 1), 1440)
+        self.every.setSuffix(" minutes")
+        self.every.setValue(int(trigger.get("interval_min") or DEFAULT_INTERVAL.get(kind, 15)) if trigger else DEFAULT_INTERVAL.get(kind, 15))
+        self.per_day = QSpinBox()
+        self.per_day.setRange(1, 500)
+        self.per_day.setSuffix(" tasks")
+        self.per_day.setValue(int(trigger.get("max_per_day") or 20) if trigger else 20)
+        self.per_day.setToolTip("A busy inbox or feed cannot use more of your tokens than this each day. It carries on tomorrow.")
+        if kind in ("page", "feed"):
+            f.addRow("Address", self.url)
+        if kind == "page":
+            self.query.setPlaceholderText("optional: the part of the page that starts at the line containing…")
+            f.addRow("Watch from", self.query)
+        if kind == "email":
+            self.query.setPlaceholderText("e.g. from:billing@example.com is:unread (Gmail search)")
+            f.addRow("Gmail search", self.query)
+        if kind == "calendar":
+            f.addRow("Start", self.minutes)
+        if poll:
+            f.addRow("Check every", self.every)
+            f.addRow("At most", self.per_day)
         f.addRow("Instructions", self.prompt)
         self.folder = QLineEdit(trigger["folder"] if trigger else "")
         self.folder.setPlaceholderText("a folder inside the workspace, e.g. inbox")
@@ -415,7 +493,9 @@ class TriggerDialog(QDialog):
         self.dry.setChecked(bool(trigger and trigger["dry_run"]))
         f.addRow("", self.dry)
         v.addLayout(f)
-        v.addWidget(label(PLACEHOLDERS_WEBHOOK if kind == "webhook" else PLACEHOLDERS_FOLDER, muted=True))
+        v.addWidget(label(PLACEHOLDERS_WEBHOOK if kind == "webhook" else PLACEHOLDERS_FOLDER if kind == "folder" else PLACEHOLDERS_POLL, muted=True))
+        if poll:
+            v.addWidget(label("Because this comes from other people, a task it starts never gets automatic approvals: anything consequential still asks you first.", muted=True))
         self.err = label("")
         v.addWidget(self.err)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -430,13 +510,17 @@ class TriggerDialog(QDialog):
             return
         body = {"kind": self.kind, "name": self.name.text().strip(), "prompt": self.prompt.toPlainText().strip(), "dry_run": self.dry.isChecked(),
                 "folder": self.folder.text().strip(), "pattern": self.pattern.text().strip() or "*"}
+        if self.kind in POLL_KINDS:
+            body.update({"url": self.url.text().strip(), "query": self.query.text().strip(), "minutes": self.minutes.value(), "interval_min": self.every.value(),
+                         "max_per_day": self.per_day.value()})
         if tgt[0] == "wf":
             body["workflow_id"] = tgt[1]
         else:
             body["bot_id"] = tgt[1]
         fail = lambda e: self.err.setText(e)
         if self.trigger:
-            patch = {k: body[k] for k in ("name", "prompt", "dry_run", "pattern")}
+            keys = ["name", "prompt", "dry_run", "pattern"] + (["url", "query", "minutes", "interval_min", "max_per_day"] if self.kind in POLL_KINDS else [])
+            patch = {k: body[k] for k in keys}
             if tgt[0] == "bot":
                 patch["bot_id"] = tgt[1]
             self.api.put(f"/api/triggers/{self.trigger['id']}", patch, lambda r: (setattr(self, "created", r), self.accept()), fail)
@@ -455,18 +539,31 @@ class TriggersTab(QWidget):
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 12, 0, 0)
         v.setSpacing(12)
-        v.addWidget(label("Start a Bot (or a workflow) when something happens: a webhook is called, or a file appears in a workspace folder.", muted=True))
-        v.addLayout(toolbar([button("New webhook…", primary=True, icon="link", on=lambda: self.new("webhook"))],
-                            [button("New folder watch…", icon="folder", on=lambda: self.new("folder")), button("Edit…", on=self.edit),
-                             button("Test fire", icon="play", on=self.fire), button("New address…", on=self.regenerate), button("Enable / disable", on=self.toggle)],
+        v.addWidget(label("Start a Bot (or a workflow) when something happens: a webhook is called, a file appears, a web page changes, a feed has a new item, "
+                          "an email arrives or a calendar event is about to start.", muted=True))
+        self.paused_banner = label("All triggers are paused. Nothing will start until you resume them.", muted=False)
+        self.paused_banner.setProperty("callout", "warn")
+        self.paused_banner.hide()
+        v.addWidget(self.paused_banner)
+        self.btn_new = button("New trigger…", primary=True, icon="zap", tip="Choose what should start the Bot")
+        menu = QMenu(self.btn_new)
+        for kind, title in (("webhook", "Webhook (an address anything can call)"), ("folder", "Folder watch (a file appears)"), ("page", "Page change"),
+                            ("feed", "RSS / Atom feed (new item)"), ("email", "New email (Gmail)"), ("calendar", "Calendar (event starting soon)")):
+            menu.addAction(title, lambda k=kind: self.new(k))
+        self.btn_new.setMenu(menu)
+        self.btn_pause = button("Pause all", icon="pause", on=self.toggle_pause, tip="Stops every trigger from starting anything until you resume")
+        v.addLayout(toolbar([self.btn_new],
+                            [button("From a template…", icon="skills", on=self.from_template), button("Edit…", on=self.edit),
+                             button("Test fire", icon="play", on=self.fire), button("Check now", on=self.check_now), button("New address…", on=self.regenerate),
+                             button("Enable / disable", on=self.toggle), self.btn_pause],
                             [button("Delete", danger=True, on=self.delete)]))
         split = QSplitter(Qt.Orientation.Vertical)
-        self.table = make_table(["Trigger", "Type", "Runs", "Fired", "Last result", "On"], 0)
+        self.table = make_table(["Trigger", "Watches", "Runs", "Fired", "Last result", "On"], 0)
         self.table.itemSelectionChanged.connect(self.load_runs)
         self.table_empty = EmptyState("zap", "No triggers yet",
-                                      "A trigger starts a Bot when a webhook is called, or when a file appears in a workspace folder.",
-                                      [button("New webhook…", primary=True, icon="link", on=lambda: self.new("webhook")),
-                                       button("New folder watch…", icon="folder", on=lambda: self.new("folder"))])
+                                      "A trigger starts a Bot when something happens: a web page changes, a new email arrives, a file appears, an event is about to start…",
+                                      [button("From a template…", primary=True, icon="skills", on=self.from_template),
+                                       button("New webhook…", icon="link", on=lambda: self.new("webhook"))])
         split.addWidget(table_with_empty(self.table, self.table_empty))
         lower = QWidget()
         lv = QVBoxLayout(lower)
@@ -496,11 +593,17 @@ class TriggersTab(QWidget):
         def ok(d: dict) -> None:
             sel = self.selected_id()
             self.triggers = d["triggers"]
+            self.paused = bool(d.get("paused"))
+            self.paused_banner.setVisible(self.paused)
+            self.btn_pause.setText("Resume all" if self.paused else "Pause all")
             self.table.setRowCount(0)
             for t in self.triggers:
-                kind = "Webhook" if t["kind"] == "webhook" else f"Folder: {t['folder'] or '(workspace)'} · {t['pattern']}"
                 last = "running…" if t["running"] else (status_text(t["last_status"]) if t["last_status"] else "never")
-                row = fill_row(self.table, [t["name"], kind, t["bot_name"], t["fired"], last, "✓" if t["enabled"] else ""], t)
+                if t.get("last_error"):
+                    last = "⚠ " + t["last_error"]            # the source could not be checked: say why instead of looking quiet
+                row = fill_row(self.table, [t["name"], describe_trigger(t), t["bot_name"], t["fired"], last, "✓" if t["enabled"] else ""], t)
+                if t.get("last_error"):
+                    self.table.item(row, 4).setToolTip(t["last_error"])
                 if t["id"] == sel:
                     self.table.selectRow(row)
             self.table.resizeRowsToContents()
@@ -541,11 +644,35 @@ class TriggersTab(QWidget):
         if run.get("thread_id") and t:
             self.openThread.emit(run["thread_id"], t["bot_id"])
 
-    def new(self, kind: str) -> None:
+    def from_template(self) -> None:
         if not self.store.bots:
             QMessageBox.information(self, "Triggers", "Create a Bot first.")
             return
-        d = TriggerDialog(self.api, self.store, kind, None, self.workflows, self)
+        names = [t["title"] for t in TRIGGER_TEMPLATES]
+        pick, ok = QInputDialog.getItem(self, "Start from a template", "Choose one. You can change everything before saving.", names, 0, False)
+        if ok:
+            t = TRIGGER_TEMPLATES[names.index(pick)]
+            self.new(t["kind"], t)
+
+    def toggle_pause(self) -> None:
+        self.api.post("/api/triggers/pause", {"paused": not getattr(self, "paused", False)}, lambda _r: self.load(), lambda e: QMessageBox.warning(self, "Triggers", e))
+
+    def check_now(self) -> None:
+        s = self.selected()
+        if not s:
+            return
+        if s["kind"] not in POLL_KINDS:
+            QMessageBox.information(self, "Check now", "Only page, feed, email and calendar triggers are checked this way. Use Test fire for the others.")
+            return
+        self.api.post(f"/api/triggers/{s['id']}/check", {}, lambda r: (self.load(), QMessageBox.information(
+            self, "Checked", (f"Started {r['started']} task(s)." if r["started"] else "Nothing new.") + (f"\n\nProblem: {r['error']}" if r["error"] else ""))),
+            lambda e: QMessageBox.warning(self, "Could not check", e))
+
+    def new(self, kind: str, preset: dict | None = None) -> None:
+        if not self.store.bots:
+            QMessageBox.information(self, "Triggers", "Create a Bot first.")
+            return
+        d = TriggerDialog(self.api, self.store, kind, None, self.workflows, self, preset)
         if d.exec():
             self.load()
             if d.created and d.created.get("url_path"):

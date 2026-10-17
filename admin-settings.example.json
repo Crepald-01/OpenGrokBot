@@ -19,6 +19,7 @@
   "allowed_mcp_servers": [],
   "allowed_providers": ["anthropic", "openrouter"],
   "allow_plugin_install": false,
+  "allow_embeddings": false,
   "allow_remote_mode": true,
   "max_steps": 60,
   "weekly_token_limit": 5000000

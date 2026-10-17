@@ -8,5 +8,7 @@ openai>=1.40
 keyring>=25.0
 APScheduler>=3.10,<4
 mcp>=1.2
+pypdf>=4.2
+openpyxl>=3.1
 qrcode>=7.4
 python-multipart>=0.0.9

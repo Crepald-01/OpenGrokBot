@@ -40,7 +40,7 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 - **Files, digest, cost and backup.** A Files page for what your Bots save, a daily digest of what they did, estimated spend from your own prices, Quick Ask (`Ctrl+J`, or `Ctrl+Alt+Space` anywhere), and one-zip backup and restore.
 - **Search, quiet hours and budgets.** `Ctrl+K` searches every chat and memory, Do Not Disturb and quiet hours silence notifications without losing them, and each Bot can have a daily token budget.
 - **Knowledge base.** Add notes, text and Word files or whole workspace folders; Bots search and quote them with `knowledge_search`. Indexed locally with full-text search: no model call, nothing leaves your PC.
-- **Automations.** Routines run a skill on a schedule. **Workflows** pass work down a pipeline of Bots (`{{previous}}` is the last step's result). **Triggers** start a Bot or a workflow from a webhook or when a file appears in a folder.
+- **Automations.** Routines run a skill on a schedule. **Workflows** pass work down a pipeline of Bots (`{{previous}}` is the last step's result). **Triggers** start a Bot or a workflow from a webhook, a file in a folder, a changed web page, a new feed item, a new email or an upcoming calendar event.
 - **Safety nets.** File history keeps the old contents when a Bot overwrites or deletes a file, so you can restore it. A backup model takes over when a Bot's model is rate limited, down or rejects its key.
 - **Insights and diagnostics.** See how Bots are doing over time (success rate, busiest hours, tools, problems), and run a plain-language health check with a support bundle you can attach to a bug report.
 - **Alerts anywhere.** Send alerts to Slack, Discord, Telegram, email or any webhook, with quiet hours applied. API tokens with `read`, `chat` or `full` scope let scripts use the [local API](docs/API.md) without your main token.
@@ -78,6 +78,10 @@ All your Bots share **one persistent computer**: a Chromium profile with your lo
 <tr>
 <td width="50%"><img src="docs/screenshots/skill-library.png" alt="The skill library"><br><sub><b>Skill library.</b> Ready-made skills: read them, install as drafts.</sub></td>
 <td width="50%"><img src="docs/screenshots/notifications.png" alt="Inbox notification history"><br><sub><b>Notifications.</b> Everything your Bots told you, unread in bold.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/triggers.png" alt="Triggers: page change, email and calendar"><br><sub><b>Triggers.</b> Start a Bot when a page changes, an email arrives or a meeting is near.</sub></td>
+<td width="50%"><img src="docs/screenshots/meaning-search.png" alt="Optional meaning-based search"><br><sub><b>Meaning search.</b> Optional, off by default, and it says what leaves your PC.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/screenshots/insights.png" alt="Insights: tasks per day, busiest hours, Bots and tools"><br><sub><b>Insights.</b> How your Bots are doing over time.</sub></td>

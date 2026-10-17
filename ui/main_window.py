@@ -932,6 +932,7 @@ class MainWindow(QMainWindow):
             bid = self.current_key.split(":", 1)[1]
             out.append(Entry("action:pin", "Unpin this Bot" if bid in self._pins else "Pin this Bot to the top", "", "bot", "Actions"))
             out.append(Entry("action:dup", "Duplicate this Bot…", "", "plus", "Actions"))
+        out.append(Entry("action:triggers", "Pause or resume all triggers", "page, feed, email, calendar, folder, webhook", "pause", "Actions"))
         out.append(Entry("action:keys", "Keyboard shortcuts", "", "keyboard", "Actions", "Ctrl+/"))
         return out
 
@@ -966,6 +967,9 @@ class MainWindow(QMainWindow):
         elif key == "action:stopall":
             self.stop_all()
             self.toast("Asked every running Bot to stop.")
+        elif key == "action:triggers":
+            self.api.get("/api/triggers", lambda d: self.api.post("/api/triggers/pause", {"paused": not d.get("paused")},
+                                                                  lambda r: self.toast("All triggers are paused." if r["paused"] else "Triggers are running again.")))
         elif key == "action:keys":
             self.show_shortcuts()
         elif key == "action:ask":

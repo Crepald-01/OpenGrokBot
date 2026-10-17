@@ -63,6 +63,7 @@ class ToolSpec:
     group: str = "core"        # core | computer | plugin:<id> | mcp:<id>
     read_only: bool = False
     needs_screen: bool = False  # uses the Bot's screen (one computer-use task at a time)
+    raw: Callable | None = None  # for connector reads: the same call returning plain Python data (the triggers use it)
 
     def schema(self) -> dict:
         return {"name": self.name, "description": self.description, "input_schema": self.input_schema}

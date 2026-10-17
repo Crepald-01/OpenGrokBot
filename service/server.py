@@ -9,6 +9,7 @@ import json
 import queue
 import re
 import socket
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -987,18 +988,42 @@ def create_app(engine: Engine, token: str) -> FastAPI:
         return {"runs": eng.workflows.runs(wid)}
 
     # ---------------------------------------------------------------------- triggers
+    @app.get("/api/upcoming", dependencies=[api])
+    def upcoming(hours: int = 24, limit: int = 6) -> dict:
+        """What will start by itself soon: routines and scheduled workflows in the next `hours`, and how many triggers are watching."""
+        horizon = time.time() + max(1, min(168, hours)) * 3600
+        items = [{"kind": "routine", "name": r["name"], "bot": r["bot_name"], "at": r["next_run_at"]} for r in eng.routines.list()
+                 if r["enabled"] and r["next_run_at"] and r["next_run_at"] <= horizon]
+        items += [{"kind": "workflow", "name": w["name"], "bot": "", "at": w["next_run_at"]} for w in eng.workflows.list()
+                  if w["enabled"] and w.get("next_run_at") and w["next_run_at"] <= horizon]
+        items.sort(key=lambda x: x["at"])
+        trig = eng.triggers.list()
+        return {"items": items[:max(1, min(20, limit))], "more": max(0, len(items) - limit),
+                "triggers": {"watching": sum(1 for t in trig if t["enabled"]), "total": len(trig), "paused": eng.triggers.paused(),
+                             "problems": sum(1 for t in trig if t["enabled"] and t.get("last_error"))}}
+
     @app.get("/api/triggers", dependencies=[api])
     def triggers_list() -> dict:
-        return {"triggers": eng.triggers.list(), "runs": eng.triggers.runs(limit=30)}
+        return {"triggers": eng.triggers.list(), "runs": eng.triggers.runs(limit=30), "paused": eng.triggers.paused()}
 
     @app.post("/api/triggers", dependencies=[api])
     def triggers_create(body: dict = Body(...)) -> dict:
         return eng.triggers.create(str(body.get("kind", "webhook")), str(body.get("name", "")), str(body.get("bot_id", "")), str(body.get("prompt", "")),
-                                   str(body.get("folder", "")), str(body.get("pattern", "*") or "*"), bool(body.get("dry_run")), str(body.get("workflow_id", "") or ""))
+                                   str(body.get("folder", "")), str(body.get("pattern", "*") or "*"), bool(body.get("dry_run")), str(body.get("workflow_id", "") or ""),
+                                   url=str(body.get("url", "")), query=str(body.get("query", "")), minutes=int(body.get("minutes") or 0),
+                                   interval_min=int(body.get("interval_min") or 0), max_per_day=int(body.get("max_per_day") or 0))
 
     @app.put("/api/triggers/{tid}", dependencies=[api])
     def triggers_update(tid: str, body: dict = Body(...)) -> dict:
-        return eng.triggers.update(tid, **{k: body.get(k) for k in ("name", "bot_id", "prompt", "pattern", "enabled", "dry_run") if k in body})
+        return eng.triggers.update(tid, **{k: body.get(k) for k in ("name", "bot_id", "prompt", "pattern", "enabled", "dry_run", "url", "query", "minutes", "interval_min", "max_per_day") if k in body})
+
+    @app.post("/api/triggers/pause", dependencies=[api])
+    def triggers_pause(body: dict = Body(default={})) -> dict:
+        return {"paused": eng.triggers.set_paused(bool(body.get("paused", True)))}
+
+    @app.post("/api/triggers/{tid}/check", dependencies=[api])
+    def triggers_check(tid: str) -> dict:
+        return eng.triggers.poll_now(tid)
 
     @app.post("/api/triggers/{tid}/regenerate", dependencies=[api])
     def triggers_regenerate(tid: str) -> dict:
@@ -1110,6 +1135,39 @@ def create_app(engine: Engine, token: str) -> FastAPI:
     @app.get("/api/knowledge/search", dependencies=[api])
     def knowledge_search(q: str = "", bot_id: str | None = None, limit: int = 8) -> dict:
         return {"hits": eng.knowledge.search(q, bot_id, limit)}
+
+    @app.get("/api/knowledge/embeddings", dependencies=[api])
+    def knowledge_embeddings() -> dict:
+        return {**eng.embedder.describe(), "vectors": eng.knowledge.stats()["vectors"], "passages": eng.knowledge.stats()["passages"]}
+
+    def _index_all() -> None:
+        for _ in range(400):                       # about 77,000 passages per switch-on at most; the background job carries on after that
+            if not eng.knowledge.index_pending():
+                break
+
+    @app.post("/api/knowledge/embeddings", dependencies=[api])
+    def knowledge_embeddings_set(body: dict = Body(...)) -> dict:
+        """Switch meaning-based search on or off. Turning it on must say so explicitly: documents are sent to the chosen service."""
+        on = bool(body.get("enabled"))
+        cur = eng.settings.get("knowledge", {}) or {}
+        profile = str(body.get("profile", cur.get("profile", "")) or "")
+        model = str(body.get("model", cur.get("model", "")) or "").strip() or "text-embedding-3-small"
+        if on:
+            if not eng.admin.embeddings_allowed():
+                raise ValueError("The administrator policy does not allow meaning-based search.")
+            if not body.get("confirm"):
+                raise ValueError("Confirm that you understand your documents' text will be sent to the embedding service.")
+        switched = (profile, model) != (cur.get("profile", ""), cur.get("model", ""))
+        eng.settings.set("knowledge", {**cur, "embeddings": on, "profile": profile, "model": model})
+        if not on or switched:
+            eng.knowledge.clear_vectors()          # off (or a different service/model) means the old vectors are not kept
+        if on:
+            ok, why = eng.embedder.usable()
+            if not ok:
+                eng.settings.set("knowledge", {**cur, "embeddings": False, "profile": profile, "model": model})
+                raise ValueError(why)
+            threading.Thread(target=_index_all, daemon=True, name="embed-index").start()
+        return knowledge_embeddings()
 
     @app.get("/api/knowledge/{sid}", dependencies=[api])
     def knowledge_read(sid: str, seq: int | None = None) -> dict:

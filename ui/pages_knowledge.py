@@ -1,4 +1,4 @@
-"""Knowledge: documents your Bots can search. Add notes, text and Word files or whole workspace folders."""
+"""Knowledge: documents your Bots can search. Add notes, text, Word, PDF and Excel files or whole workspace folders. Optional meaning-based search."""
 from __future__ import annotations
 
 import base64
@@ -8,7 +8,7 @@ import re
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QPlainTextEdit, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
+                               QListWidgetItem, QMessageBox, QPlainTextEdit, QSplitter, QStackedWidget, QCheckBox, QVBoxLayout, QWidget)
 
 from . import theme
 from .api import Api
@@ -19,7 +19,7 @@ from .store import Store
 from .widgets import PageHeader, button, card, label, page_layout
 
 MAX_UPLOAD = 20_000_000
-FILE_FILTER = "Documents (*.txt *.md *.markdown *.csv *.tsv *.json *.log *.html *.htm *.xml *.yml *.yaml *.docx *.rst *.py *.js);;All files (*)"
+FILE_FILTER = "Documents (*.txt *.md *.markdown *.csv *.tsv *.json *.log *.html *.htm *.xml *.yml *.yaml *.docx *.pdf *.xlsx *.rst *.py *.js);;All files (*)"
 
 
 class NoteDialog(QDialog):
@@ -74,7 +74,8 @@ class HitCard(QFrame):
         v.setContentsMargins(theme.dp(16), theme.dp(12), theme.dp(16), theme.dp(14))
         v.setSpacing(theme.dp(4))
         v.addWidget(label(hit["name"], h2=True, wrap=False))
-        v.addWidget(label(f"Passage {hit['seq']}", muted=True, wrap=False))
+        why = {"keyword": "matched your words", "meaning": "matched the meaning", "keyword + meaning": "matched your words and the meaning"}.get(hit.get("why", ""), "")
+        v.addWidget(label(f"Passage {hit['seq']}" + (f"  ·  {why}" if why else ""), muted=True, wrap=False))
         snippet = " ".join(hit["snippet"].split())[:240]
         body = QLabel(highlight(snippet, query))
         body.setTextFormat(Qt.TextFormat.RichText)
@@ -119,6 +120,74 @@ class HitList(QListWidget):
                 c.set_selected(i == row)
 
 
+class MeaningDialog(QDialog):
+    """Switch meaning-based (embedding) search on or off. It is off by default, and turning it on says plainly what leaves the PC."""
+
+    def __init__(self, api: Api, parent=None):
+        super().__init__(parent)
+        self.api = api
+        self.state: dict = {}
+        self.setWindowTitle("Meaning-based search")
+        self.resize(600, 460)
+        v = QVBoxLayout(self)
+        v.setSpacing(theme.dp(12))
+        v.addWidget(label("Normally your documents are searched by the words in them, entirely on this PC. Meaning-based search also finds passages that say the same thing "
+                          "in other words (for example “pet” finds a passage about a kitten).", muted=True))
+        warn = label("To do this, the text of every passage you add is sent to the embedding service you choose below, and again for every new document. "
+                     "A local service such as Ollama or LM Studio keeps everything on your PC. Anthropic offers no embeddings service. "
+                     "Switching this off deletes the stored vectors.", muted=False)
+        warn.setProperty("callout", "warn")
+        v.addWidget(warn)
+        f = QFormLayout()
+        self.provider = QComboBox()
+        self.model = QLineEdit()
+        self.model.setPlaceholderText("text-embedding-3-small  (for Ollama, e.g. nomic-embed-text)")
+        f.addRow("Service", self.provider)
+        f.addRow("Model", self.model)
+        v.addLayout(f)
+        self.confirm = QCheckBox("I understand that my documents' text is sent to this service")
+        v.addWidget(self.confirm)
+        self.status = label("", muted=True)
+        v.addWidget(self.status)
+        self.err = label("")
+        v.addWidget(self.err)
+        row = QHBoxLayout()
+        self.on_btn = button("Switch on", primary=True, on=lambda: self._set(True))
+        self.off_btn = button("Switch off and delete vectors", danger=True, on=lambda: self._set(False))
+        row.addWidget(self.on_btn)
+        row.addWidget(self.off_btn)
+        row.addStretch(1)
+        row.addWidget(button("Close", on=self.accept))
+        v.addLayout(row)
+        api.get("/api/knowledge/embeddings", self._got, lambda e: self.err.setText(e))
+
+    def _got(self, d: dict) -> None:
+        self.state = d
+        self.provider.clear()
+        for p in d.get("providers", []):
+            self.provider.addItem(p["label"] + ("  (on this PC)" if p["local"] else "  (online)"), p["id"])
+        i = self.provider.findData(d.get("profile"))
+        self.provider.setCurrentIndex(max(i, 0))
+        self.model.setText(d.get("model", ""))
+        on = bool(d.get("enabled"))
+        self.on_btn.setText("Apply" if on else "Switch on")
+        self.off_btn.setEnabled(on)
+        self.confirm.setChecked(on)
+        if not d.get("allowed", True):
+            self.status.setText("Your administrator policy does not allow this feature.")
+            self.on_btn.setEnabled(False)
+        elif on:
+            n, total = d.get("vectors", 0), d.get("passages", 0)
+            self.status.setText(f"On. {n:,} of {total:,} passages indexed" + (f". Problem: {d['why']}" if not d.get("usable") else ".") + (f" {d['last_error']}" if d.get("last_error") else ""))
+        else:
+            self.status.setText("Off.")
+
+    def _set(self, on: bool) -> None:
+        self.err.setText("")
+        body = {"enabled": on, "profile": self.provider.currentData() or "", "model": self.model.text().strip(), "confirm": self.confirm.isChecked()}
+        self.api.post("/api/knowledge/embeddings", body, self._got, lambda e: self.err.setText(e))
+
+
 class KnowledgePage(QWidget):
     def __init__(self, api: Api, store: Store):
         super().__init__()
@@ -131,8 +200,9 @@ class KnowledgePage(QWidget):
         self.add_files_btn = button("Add files…", primary=True, icon="upload", on=self.add_files)
         self.add_note_btn = button("Add note…", icon="plus", on=self.add_note)
         self.add_folder_btn = button("Add workspace folder…", icon="folder", on=self.add_folder)
-        v = page_layout(self, PageHeader("Knowledge", "Documents your Bots can search and quote. Nothing leaves your PC: it is indexed locally, with no model call.",
-                                         [self.add_files_btn, self.add_note_btn, self.add_folder_btn]))
+        v = page_layout(self, PageHeader("Knowledge", "Documents your Bots can search and quote. Nothing leaves your PC unless you switch on meaning-based search.",
+                                         [self.add_files_btn, self.add_note_btn, self.add_folder_btn,
+                                          button("Meaning search…", icon="search", on=self.meaning_search, tip="Optional: also find passages that mean the same as your words")]))
         v.setSpacing(theme.dp(20))
         bar = QHBoxLayout()
         bar.setSpacing(theme.dp(10))
@@ -311,8 +381,13 @@ class KnowledgePage(QWidget):
             self.current = None
             self.del_btn.setEnabled(False)
             self.p_title.setText(h["name"])
-            self.p_meta.setText(f"Passage {h['seq']}")
+            self.p_meta.setText(f"Passage {h['seq']}" + {"keyword": "  ·  matched your words", "meaning": "  ·  matched the meaning, not the exact words",
+                                                           "keyword + meaning": "  ·  matched your words and the meaning"}.get(h.get("why", ""), ""))
             self.p_text.setPlainText(h["text"])
+
+    def meaning_search(self) -> None:
+        MeaningDialog(self.api, self).exec()
+        self.reload()
 
     # ------------------------------------------------------------------ adding
     def _bot(self) -> str:
